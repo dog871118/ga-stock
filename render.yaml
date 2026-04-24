@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: ga-stock-api
+    env: python
+    buildCommand: pip install -r api/requirements.txt
+    startCommand: gunicorn api.index:app
+    plan: free

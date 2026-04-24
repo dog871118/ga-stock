@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GA 股票訊號</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #1a1a2e; color: #fff; min-height: 100vh; padding: 20px; }
+  h1 { text-align: center; font-size: 24px; margin-bottom: 24px; color: #e0e0e0; }
+  .search-box { display: flex; gap: 10px; margin-bottom: 24px; }
+  input { flex: 1; padding: 14px; border-radius: 12px; border: none; font-size: 18px; background: #16213e; color: #fff; text-align: center; letter-spacing: 2px; }
+  button { padding: 14px 24px; border-radius: 12px; border: none; background: #0f3460; color: #fff; font-size: 18px; cursor: pointer; }
+  button:active { background: #e94560; }
+  .result { background: #16213e; border-radius: 16px; padding: 24px; text-align: center; }
+  .signal { font-size: 72px; margin-bottom: 12px; }
+  .action { font-size: 28px; font-weight: bold; margin-bottom: 8px; }
+  .price { font-size: 22px; color: #a0a0b0; margin-bottom: 8px; }
+  .days { font-size: 18px; color: #6060a0; }
+  .error { color: #e94560; font-size: 18px; }
+  .loading { color: #a0a0b0; font-size: 18px; }
+  .buy { color: #00c853; }
+  .sell { color: #ff1744; }
+  .hold { color: #ffab00; }
+  .watch { color: #78909c; }
+</style>
+</head>
+<body>
+<h1>📊 GA 股票訊號</h1>
+<div class="search-box">
+  <input type="text" id="stockInput" placeholder="輸入股票代號" maxlength="10"
+    onkeypress="if(event.key==='Enter') checkStock()">
+  <button onclick="checkStock()">查詢</button>
+</div>
+<div class="result" id="result">
+  <div class="loading">輸入股票代號查詢訊號</div>
+</div>
+
+<script>
+const API = 'https://ga-stock.onrender.com';
+
+async function checkStock() {
+  const raw = document.getElementById('stockInput').value.trim().toUpperCase();
+  if (!raw) return;
+
+  document.getElementById('result').innerHTML = '<div class="loading">查詢中，請稍候...</div>';
+
+  try {
+    const res = await fetch(`${API}/api/check?id=${raw}`);
+    const data = await res.json();
+
+    if (data.error) {
+      document.getElementById('result').innerHTML = `<div class="error">⚠️ ${data.error}</div>`;
+      return;
+    }
+
+    const colorMap = { '🟢': 'buy', '🔴': 'sell', '🟡': 'hold', '⬜': 'watch' };
+    const color = colorMap[data.signal] || '';
+    const daysText = data.hold_days > 0 ? `<div class="days">持股 ${data.hold_days} 天</div>` : '';
+
+    document.getElementById('result').innerHTML = `
+      <div class="signal">${data.signal}</div>
+      <div class="action ${color}">${data.action}</div>
+      <div class="price">現價：${data.price}</div>
+      ${daysText}
+    `;
+  } catch(e) {
+    document.getElementById('result').innerHTML = '<div class="error">⚠️ 連線失敗，請稍後再試</div>';
+  }
+}
+</script>
+</body>
+</html>

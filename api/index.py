@@ -48,19 +48,17 @@ def get_signal_20d(stock_id):
 
         if status == 'holding':
             if price < prev2_low:
-                signal = '🔴'
-                action = '賣出'
+                signal, action = '🔴', '賣出'
+            elif buy_day == len(close) - 1:
+                signal, action = '🟢', '買進'
             else:
-                signal = '🟡'
-                action = '持有'
+                signal, action = '🟡', '持有'
             hold_days = (len(close) - 1) - buy_day if buy_day is not None else 0
         else:
             if price > prev2_high:
-                signal = '🟢'
-                action = '買進'
+                signal, action = '🟢', '買進'
             else:
-                signal = '⬜'
-                action = '空手'
+                signal, action = '⬜', '空手'
             hold_days = 0
 
         return {

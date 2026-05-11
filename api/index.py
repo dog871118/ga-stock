@@ -82,9 +82,7 @@ def batch_check():
         results[stock_id] = get_signal_20d(stock_id)
     return jsonify(results)
 
-@app.route('/')
-def home():
-    return '''<!DOCTYPE html>
+HTML_PAGE = """<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
@@ -148,12 +146,12 @@ h1 { font-size: 1.6rem; text-align: center; color: #f8fafc; margin-bottom: 4px; 
 </style>
 </head>
 <body>
-<h1>📈 GA 買賣訊號</h1>
+<h1>&#128200; GA 買賣訊號</h1>
 <p class="subtitle">2日高低點突破系統</p>
 <div class="tabs" id="tabs"></div>
 <div id="panels"></div>
 <script>
-const DEFAULT_GROUPS = [
+var DEFAULT_GROUPS = [
   { name: "短線強勢股", stocks: [] },
   { name: "波段持股", stocks: [] },
   { name: "觀察名單", stocks: [] },
@@ -162,42 +160,117 @@ const DEFAULT_GROUPS = [
 ];
 function loadGroups() {
   try {
-    const saved = localStorage.getItem("ga_groups");
+    var saved = localStorage.getItem("ga_groups");
     return saved ? JSON.parse(saved) : DEFAULT_GROUPS;
   } catch(e) { return DEFAULT_GROUPS; }
 }
 function saveGroups() { localStorage.setItem("ga_groups", JSON.stringify(groups)); }
-let groups = loadGroups();
-let activeTab = 0;
+var groups = loadGroups();
+var activeTab = 0;
 
 function render() {
-  const tabsEl = document.getElementById("tabs");
-  const panelsEl = document.getElementById("panels");
+  var tabsEl = document.getElementById("tabs");
+  var panelsEl = document.getElementById("panels");
   tabsEl.innerHTML = "";
   panelsEl.innerHTML = "";
-  groups.forEach((g, i) => {
-    const tab = document.createElement("div");
+  groups.forEach(function(g, i) {
+    var tab = document.createElement("div");
     tab.className = "tab" + (i === activeTab ? " active" : "");
     tab.textContent = g.name || ("群組" + (i+1));
-    tab.onclick = () => { activeTab = i; render(); };
+    tab.onclick = (function(idx){ return function(){ activeTab = idx; render(); }; })(i);
     tabsEl.appendChild(tab);
-    const panel = document.createElement("div");
+    var panel = document.createElement("div");
     panel.className = "panel" + (i === activeTab ? " active" : "");
-    panel.innerHTML = `
-      <div class="card">
-        <div class="group-header">
-          <input class="group-name-input" value="${g.name}" placeholder="群組名稱"
-            onchange="renameGroup(${i}, this.value)">
-        </div>
-        <div class="add-row">
-          <input type="text" id="addInput${i}" placeholder="輸入代號，如 2330 或 3550.TWO" maxlength="12"
-            onkeydown="if(event.key==='Enter') addStock(${i})">
-          <button class="btn btn-primary" onclick="addStock(${i})">新增</button>
-        </div>
-        <div class="stock-list" id="stockList${i}">${renderStockRows(g.stocks, i, false)}</div>
-        <div class="scan-btn-row">
-          <button class="btn btn-success" onclick="scanGroup(${i})">🔍 掃描訊號</button>
-        </div>
-        <div class="updated-time" id="updatedTime${i}"></div>
-      </div>`;
-    panelsEl.appendC
+    panel.innerHTML =
+      "<div class=\\"card\\">" +
+      "<div class=\\"group-header\\">" +
+      "<input class=\\"group-name-input\\" value=\\"" + g.name + "\\" placeholder=\\"群組名稱\\" onchange=\\"renameGroup(" + i + ", this.value)\\">" +
+      "</div>" +
+      "<div class=\\"add-row\\">" +
+      "<input type=\\"text\\" id=\\"addInput" + i + "\\" placeholder=\\"輸入代號，如 2330 或 3550.TWO\\" maxlength=\\"12\\" onkeydown=\\"if(event.key===&quot;Enter&quot;) addStock(" + i + ")\\">" +
+      "<button class=\\"btn btn-primary\\" onclick=\\"addStock(" + i + ")\\">新增</button>" +
+      "</div>" +
+      "<div class=\\"stock-list\\" id=\\"stockList" + i + "\\">" + renderStockRows(g.stocks, i) + "</div>" +
+      "<div class=\\"scan-btn-row\\">" +
+      "<button class=\\"btn btn-success\\" onclick=\\"scanGroup(" + i + ")\\">🔍 掃描訊號</button>" +
+      "</div>" +
+      "<div class=\\"updated-time\\" id=\\"updatedTime" + i + "\\"></div>" +
+      "</div>";
+    panelsEl.appendChild(panel);
+  });
+}
+
+function renderStockRows(stocks, gi) {
+  if (!stocks || stocks.length === 0)
+    return "<div class=\\"empty-hint\\">尚未新增股票，輸入代號後點「新增」</div>";
+  return stocks.map(function(s, si) {
+    var sig = s.signal || "⬜";
+    var act = s.action || "—";
+    var price = s.price ? s.price + " 元" : "—";
+    var days = s.hold_days > 0 ? s.hold_days + " 天" : "";
+    var colorClass = sig === "🟢" ? "signal-green" : sig === "🟡" ? "signal-yellow" : sig === "🔴" ? "signal-red" : "signal-white";
+    return "<div class=\\"stock-row\\">" +
+      "<span class=\\"stock-id\\">" + s.id + "</span>" +
+      "<span class=\\"stock-signal\\">" + sig + "</span>" +
+      "<span class=\\"stock-action " + colorClass + "\\">" + act + "</span>" +
+      "<span class=\\"stock-price\\">" + price + "</span>" +
+      "<span class=\\"stock-days\\">" + days + "</span>" +
+      "<button class=\\"btn btn-danger\\" onclick=\\"removeStock(" + gi + "," + si + ")\\">刪除</button>" +
+      "</div>";
+  }).join("");
+}
+
+function renameGroup(i, name) {
+  groups[i].name = name;
+  saveGroups();
+  document.querySelectorAll(".tab")[i].textContent = name || ("群組"+(i+1));
+}
+function addStock(i) {
+  var input = document.getElementById("addInput"+i);
+  var val = input.value.trim().toUpperCase();
+  if (!val) return;
+  if (groups[i].stocks.find(function(s){ return s.id === val; })) { alert("已存在此代號"); return; }
+  groups[i].stocks.push({ id: val });
+  saveGroups();
+  input.value = "";
+  document.getElementById("stockList"+i).innerHTML = renderStockRows(groups[i].stocks, i);
+}
+function removeStock(gi, si) {
+  groups[gi].stocks.splice(si, 1);
+  saveGroups();
+  document.getElementById("stockList"+gi).innerHTML = renderStockRows(groups[gi].stocks, gi);
+}
+function scanGroup(i) {
+  var stocks = groups[i].stocks;
+  if (!stocks || stocks.length === 0) { alert("請先新增股票"); return; }
+  var ids = stocks.map(function(s){ return s.id; }).join(",");
+  document.getElementById("stockList"+i).innerHTML = "<div class=\\"loading-row\\">⏳ 查詢中，請稍候...</div>";
+  fetch("/api/batch?ids=" + encodeURIComponent(ids))
+    .then(function(res){ return res.json(); })
+    .then(function(data) {
+      stocks.forEach(function(s) {
+        var r = data[s.id];
+        if (r) { s.signal = r.signal; s.action = r.action; s.price = r.price; s.hold_days = r.hold_days; }
+      });
+      saveGroups();
+      document.getElementById("stockList"+i).innerHTML = renderStockRows(stocks, i);
+      var now = new Date();
+      document.getElementById("updatedTime"+i).textContent =
+        "更新時間：" + now.getFullYear() + "/" + (now.getMonth()+1) + "/" + now.getDate() +
+        " " + now.getHours() + ":" + String(now.getMinutes()).padStart(2,"0");
+    })
+    .catch(function() {
+      document.getElementById("stockList"+i).innerHTML = "<div class=\\"loading-row\\" style=\\"color:#f87171\\">❌ 連線失敗，請稍後再試</div>";
+    });
+}
+render();
+</script>
+</body>
+</html>"""
+
+@app.route('/')
+def home():
+    return HTML_PAGE
+
+if __name__ == '__main__':
+    app.run()

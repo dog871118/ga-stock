@@ -70,7 +70,16 @@ def check_stock():
     if result is None:
         return jsonify({'error': '查無資料，請確認代號'}), 404
     return jsonify(result)
-
+@app.route('/api/batch', methods=['GET'])
+def batch_check():
+    ids = request.args.get('ids', '')
+    if not ids:
+        return jsonify({'error': '請輸入股票代號'}), 400
+    stock_list = [s.strip() for s in ids.split(',') if s.strip()]
+    results = {}
+    for stock_id in stock_list:
+        results[stock_id] = get_signal_20d(stock_id)
+    return jsonify(results)
 @app.route('/')
 def home():
     return '''<!DOCTYPE html>

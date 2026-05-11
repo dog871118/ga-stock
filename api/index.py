@@ -63,73 +63,27 @@ def get_signal_20d(stock_id):
                 signal, action = '⬜', '空手'
             hold_days = 0
 
-        def get_radius(p):
-            if p < 50:   return 0.5
-            if p < 200:  return 1.0
-            if p < 500:  return 3.0
-            return 5.0
-
+        # 關鍵壓力支撐計算
         h5  = float(high.iloc[-5:].max())
         h10 = float(high.iloc[-10:].max())
-        h20 = float(high.iloc[-20:].max())
         l5  = float(low.iloc[-5:].min())
-        l10 = float(low.iloc[-10:].min())
-        l20 = float(low.iloc[-20:].min())
-        ma5  = float(close.iloc[-5:].mean())
-        ma20 = float(close.iloc[-20:].mean())
-        ma60 = float(close.iloc[-60:].mean()) if len(close) >= 60 else ma20
-        trend_up = price > ma60
-        vol_max_idx = int(vol.iloc[-20:].values.argmax())
-        vk_high = float(high.iloc[-20:].iloc[vol_max_idx])
-        vk_low  = float(low.iloc[-20:].iloc[vol_max_idx])
+        ma5 = float(close.iloc[-5:].mean())
 
-        import math
-        def nearest_integer(p):
-            base = math.floor(p / 50) * 50
-            candidates = [base + mult * 50 for mult in range(-2, 4)]
-            return min(candidates, key=lambda x: abs(x - p))
+        # 近20日大量K棒
+        vol20     = vol.iloc[-20:]
+        high20    = high.iloc[-20:]
+        low20     = low.iloc[-20:]
+        vol_idx   = int(vol20.values.argmax())
+        vk_high   = float(high20.iloc[vol_idx])
+        vk_low    = float(low20.iloc[vol_idx])
 
-        int_level = nearest_integer(price)
-        radius = get_radius(price)
+        # 關鍵壓力：近5日高、近10日高、大量K高 → 取最小且>現價
+        r_candidates = [v for v in [h5, h10, vk_high] if v > price]
+        resistance = round(min(r_candidates), 2) if r_candidates else None
 
-        resistance_candidates = []
-        support_candidates = []
-
-        for val, weight in [(h5,2),(h10,2),(h20,2),(vk_high,3),(int_level,1)]:
-            if val > price:
-                resistance_candidates.append((val, weight))
-        if not trend_up:
-            for val, weight in [(ma5,2),(ma20,2),(ma60,2)]:
-                if val > price:
-                    resistance_candidates.append((val, weight))
-
-        for val, weight in [(l5,2),(l10,2),(l20,2),(vk_low,3),(int_level,1)]:
-            if val < price:
-                support_candidates.append((val, weight))
-        if trend_up:
-            for val, weight in [(ma5,2),(ma20,2),(ma60,2)]:
-                if val < price:
-                    support_candidates.append((val, weight))
-
-        def merge_levels(candidates, radius):
-            if not candidates:
-                return None
-            groups = []
-            for val, w in sorted(candidates, key=lambda x: x[0]):
-                merged = False
-                for g in groups:
-                    if abs(val - g['center']) <= radius:
-                        g['score'] += w
-                        g['center'] = (g['center'] + val) / 2
-                        merged = True
-                        break
-                if not merged:
-                    groups.append({'center': val, 'score': w})
-            best = max(groups, key=lambda x: x['score'])
-            return round(best['center'], 2)
-
-        resistance = merge_levels(resistance_candidates, radius)
-        support    = merge_levels(support_candidates, radius)
+        # 關鍵支撐：近5日低、MA5、大量K低 → 取最大且<現價
+        s_candidates = [v for v in [l5, ma5, vk_low] if v < price]
+        support = round(max(s_candidates), 2) if s_candidates else None
 
         return {
             'signal':     signal,
@@ -171,14 +125,14 @@ HTML_PAGE = """<!DOCTYPE html>
 <title>GA 買賣訊號</title>
 <style>
 :root {
-  --bg:      #000;
-  --bg2:     #0a0a0a;
-  --bg3:     #141414;
-  --bg4:     #1c1c1e;
-  --border:  rgba(255,255,255,0.08);
-  --text1:   #f5f5f7;
-  --text2:   #a1a1a6;
-  --text3:   #48484a;
+  --bg:      #1a1a1a;
+  --bg2:     #222222;
+  --bg3:     #2a2a2a;
+  --bg4:     #2e2e2e;
+  --border:  rgba(255,255,255,0.09);
+  --text1:   #f0f0f0;
+  --text2:   #999999;
+  --text3:   #555555;
   --accent:  #0a84ff;
   --green:   #30d158;
   --yellow:  #ffd60a;
@@ -189,10 +143,14 @@ HTML_PAGE = """<!DOCTYPE html>
 }
 * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
 body { font-family:-apple-system,"Helvetica Neue",sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; padding-bottom:40px; }
-.header { padding:52px 20px 0; margin-bottom:24px; }
-.header h1 { font-size:1.9rem; font-weight:700; letter-spacing:-0.04em; }
+.header { padding:52px 20px 0; margin-bottom:20px; }
+.header h1 { font-size:1.8rem; font-weight:700; letter-spacing:-0.04em; }
 .header p  { font-size:0.78rem; color:var(--text3); margin-top:3px; letter-spacing:0.03em; }
-.tabs-wrap { padding:0 16px; margin-bottom:16px; overflow-x:auto; scrollbar-width:none; }
+.sync-bar { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:0 16px 14px; }
+.btn-sync { padding:6px 13px; border-radius:20px; border:1px solid var(--border); background:var(--bg3); color:var(--text2); font-size:0.75rem; font-weight:500; cursor:pointer; font-family:inherit; transition:all .2s; }
+.btn-sync:active { background:var(--bg4); color:var(--text1); }
+.sync-st { font-size:0.7rem; color:var(--text3); }
+.tabs-wrap { padding:0 16px; margin-bottom:14px; overflow-x:auto; scrollbar-width:none; }
 .tabs-wrap::-webkit-scrollbar { display:none; }
 .tabs { display:flex; gap:8px; width:max-content; }
 .tab { padding:6px 15px; border-radius:20px; font-size:0.82rem; font-weight:500; cursor:pointer; border:1px solid var(--border); color:var(--text2); background:var(--bg4); transition:all .2s; white-space:nowrap; }
@@ -210,16 +168,20 @@ body { font-family:-apple-system,"Helvetica Neue",sans-serif; background:var(--b
 .add-inp::placeholder { color:var(--text3); }
 .btn-add { padding:9px 16px; border-radius:var(--radius-s); border:none; background:var(--accent); color:#fff; font-size:0.85rem; font-weight:600; cursor:pointer; font-family:inherit; transition:opacity .2s; }
 .btn-add:active { opacity:.7; }
-.tbl-head { display:grid; grid-template-columns:58px 64px 80px 64px 64px 28px; gap:4px; padding:6px 16px 8px; }
-.tbl-head span { font-size:0.65rem; color:var(--text3); font-weight:600; letter-spacing:0.05em; text-transform:uppercase; }
-.tbl-head span:nth-child(2),.tbl-head span:nth-child(4),.tbl-head span:nth-child(5) { text-align:right; }
+.tbl-head { display:grid; grid-template-columns:58px 64px 84px 64px 64px 28px; gap:4px; padding:8px 16px; border-top:1px solid var(--border); }
+.tbl-head span { font-size:0.62rem; color:var(--text3); font-weight:600; letter-spacing:0.06em; text-transform:uppercase; }
+.tbl-head span:nth-child(2),
+.tbl-head span:nth-child(4),
+.tbl-head span:nth-child(5) { text-align:right; }
 .stock-list {}
-.srow { display:grid; grid-template-columns:58px 64px 80px 64px 64px 28px; gap:4px; align-items:center; padding:11px 16px; border-top:1px solid var(--border); }
+.srow { display:grid; grid-template-columns:58px 64px 84px 64px 64px 28px; gap:4px; align-items:center; padding:12px 16px; border-top:1px solid var(--border); transition:background .15s; }
 .srow:active { background:rgba(255,255,255,0.03); }
 .c-id { font-size:0.88rem; font-weight:600; color:var(--text1); }
 .c-price { font-size:0.88rem; font-weight:500; color:var(--text1); text-align:right; }
 .c-sig { font-size:0.8rem; font-weight:600; display:flex; align-items:center; gap:4px; }
 .c-lv { font-size:0.82rem; color:var(--text2); text-align:right; }
+.c-lv.resist { color:#ff6b6b; }
+.c-lv.supprt { color:#5ec75e; }
 .c-del { display:flex; justify-content:flex-end; }
 .btn-del { width:22px; height:22px; border-radius:50%; border:none; background:rgba(255,69,58,.12); color:var(--red); font-size:0.9rem; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .2s; }
 .btn-del:active { background:rgba(255,69,58,.35); }
@@ -235,10 +197,6 @@ body { font-family:-apple-system,"Helvetica Neue",sans-serif; background:var(--b
 .btn-scan { padding:8px 18px; border-radius:20px; border:none; background:var(--green); color:#000; font-size:0.82rem; font-weight:700; cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:5px; transition:opacity .2s; }
 .btn-scan:active { opacity:.7; }
 .btn-scan:disabled { background:var(--bg3); color:var(--text3); cursor:not-allowed; }
-.sync-bar { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:8px 16px 0; }
-.btn-sync { padding:6px 14px; border-radius:20px; border:1px solid var(--border); background:transparent; color:var(--text2); font-size:0.75rem; font-weight:500; cursor:pointer; font-family:inherit; transition:all .2s; }
-.btn-sync:active { background:var(--bg4); }
-.sync-status { font-size:0.72rem; color:var(--text3); }
 </style>
 </head>
 <body>
@@ -247,7 +205,7 @@ body { font-family:-apple-system,"Helvetica Neue",sans-serif; background:var(--b
   <p>2 日高低點突破系統</p>
 </div>
 <div class="sync-bar">
-  <span class="sync-status" id="syncStatus">尚未同步</span>
+  <span class="sync-st" id="syncSt">尚未同步</span>
   <button class="btn-sync" onclick="syncDown()">&#9729; 從雲端載入</button>
   <button class="btn-sync" onclick="syncUp()">&#8593; 儲存至雲端</button>
 </div>
@@ -255,113 +213,82 @@ body { font-family:-apple-system,"Helvetica Neue",sans-serif; background:var(--b
 <div id="panels"></div>
 
 <script>
-var GAS = "https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec";
-var DEFAULT_GROUPS = [
-  {name:"短線強勢股",stocks:[]},
-  {name:"波段持股",stocks:[]},
-  {name:"觀察名單",stocks:[]},
-  {name:"自選群組4",stocks:[]},
-  {name:"自選群組5",stocks:[]}
+var GAS="https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec";
+var DEF=[
+  {name:"短線強勢股",stocks:[]},{name:"波段持股",stocks:[]},
+  {name:"觀察名單",stocks:[]},{name:"自選群組4",stocks:[]},{name:"自選群組5",stocks:[]}
 ];
-function loadLocal() {
-  try { var s=localStorage.getItem("ga_v3"); return s?JSON.parse(s):DEFAULT_GROUPS; } catch(e){ return DEFAULT_GROUPS; }
-}
-function saveLocal() { localStorage.setItem("ga_v3",JSON.stringify(groups)); }
+function loadL(){ try{ var s=localStorage.getItem("ga_v3"); return s?JSON.parse(s):DEF; }catch(e){ return DEF; } }
+function saveL(){ localStorage.setItem("ga_v3",JSON.stringify(groups)); }
+var groups=loadL(), activeTab=0;
 
-var groups = loadLocal();
-var activeTab = 0;
-
-// 雲端同步：把 groups 轉成二維陣列存到 GAS
-// 格式：每行 = [groupIdx, groupName, stockId]
-function groupsToRows(gs) {
-  var rows = [];
+function g2rows(gs){
+  var rows=[];
   gs.forEach(function(g,gi){
-    if(g.stocks && g.stocks.length>0){
-      g.stocks.forEach(function(s){
-        rows.push([gi, g.name, s.id]);
-      });
-    } else {
-      rows.push([gi, g.name, '']);
-    }
+    if(g.stocks&&g.stocks.length>0){ g.stocks.forEach(function(s){ rows.push([gi,g.name,s.id]); }); }
+    else{ rows.push([gi,g.name,'']); }
   });
   return rows;
 }
-function rowsToGroups(rows) {
-  var gs = DEFAULT_GROUPS.map(function(g){ return {name:g.name, stocks:[]}; });
+function rows2g(rows){
+  var gs=DEF.map(function(g){ return {name:g.name,stocks:[]}; });
   rows.forEach(function(r){
-    if(!r || r.length<3) return;
-    var gi = parseInt(r[0]);
+    if(!r||r.length<3) return;
+    var gi=parseInt(r[0]);
     if(isNaN(gi)||gi<0||gi>4) return;
-    gs[gi].name = r[1] || gs[gi].name;
+    gs[gi].name=r[1]||gs[gi].name;
     if(r[2]) gs[gi].stocks.push({id:String(r[2])});
   });
   return gs;
 }
-
-function setSyncStatus(msg) {
-  document.getElementById("syncStatus").textContent = msg;
+function setSt(m){ document.getElementById("syncSt").textContent=m; }
+function syncUp(){
+  setSt("儲存中...");
+  var url=GAS+"?action=save&payload="+encodeURIComponent(JSON.stringify(g2rows(groups)));
+  fetch(url).then(function(r){return r.json();}).then(function(d){
+    setSt(d.ok?"已儲存 "+new Date().toLocaleTimeString():"儲存失敗");
+  }).catch(function(){ setSt("儲存失敗"); });
+}
+function syncDown(){
+  setSt("載入中...");
+  fetch(GAS+"?action=load").then(function(r){return r.json();}).then(function(d){
+    if(d.data&&d.data.length>0){
+      groups=rows2g(d.data); saveL(); activeTab=0; render();
+      setSt("已載入 "+new Date().toLocaleTimeString());
+    } else { setSt("雲端無資料"); }
+  }).catch(function(){ setSt("載入失敗"); });
 }
 
-function syncUp() {
-  setSyncStatus("儲存中...");
-  var rows = groupsToRows(groups);
-  var url = GAS + "?action=save&payload=" + encodeURIComponent(JSON.stringify(rows));
-  fetch(url)
-    .then(function(r){return r.json();})
-    .then(function(d){
-      if(d.ok) setSyncStatus("已儲存 " + new Date().toLocaleTimeString());
-      else setSyncStatus("儲存失敗");
-    })
-    .catch(function(){ setSyncStatus("儲存失敗"); });
-}
-
-function syncDown() {
-  setSyncStatus("載入中...");
-  var url = GAS + "?action=load";
-  fetch(url)
-    .then(function(r){return r.json();})
-    .then(function(d){
-      if(d.data && d.data.length>0){
-        groups = rowsToGroups(d.data);
-        saveLocal();
-        activeTab = 0;
-        render();
-        setSyncStatus("已載入 " + new Date().toLocaleTimeString());
-      } else {
-        setSyncStatus("雲端無資料");
-      }
-    })
-    .catch(function(){ setSyncStatus("載入失敗"); });
-}
-
-function render() {
-  var tabsEl=document.getElementById("tabs");
-  var panelsEl=document.getElementById("panels");
-  tabsEl.innerHTML=""; panelsEl.innerHTML="";
+function render(){
+  var te=document.getElementById("tabs"),pe=document.getElementById("panels");
+  te.innerHTML=""; pe.innerHTML="";
   groups.forEach(function(g,i){
-    var tab=document.createElement("div");
-    tab.className="tab"+(i===activeTab?" active":"");
-    tab.textContent=g.name||("群組"+(i+1));
-    tab.onclick=(function(idx){return function(){activeTab=idx;render();};})(i);
-    tabsEl.appendChild(tab);
-    var panel=document.createElement("div");
-    panel.className="panel"+(i===activeTab?" active":"");
-    panel.innerHTML=
+    var t=document.createElement("div");
+    t.className="tab"+(i===activeTab?" active":"");
+    t.textContent=g.name||("群組"+(i+1));
+    t.onclick=(function(idx){return function(){activeTab=idx;render();};})(i);
+    te.appendChild(t);
+    var p=document.createElement("div");
+    p.className="panel"+(i===activeTab?" active":"");
+    p.innerHTML=
       "<div class=\\"card\\">"+
-      "<div class=\\"gname-wrap\\"><input class=\\"gname\\" value=\\""+esc(g.name)+"\\" placeholder=\\"群組名稱\\" onchange=\\"rename("+i+",this.value)\\"></div>"+
+      "<div class=\\"gname-wrap\\"><input class=\\"gname\\" value=\\""+esc(g.name)+"\\" placeholder=\\"群組名稱\\" onchange=\\"ren("+i+",this.value)\\"></div>"+
       "<div class=\\"sep\\"></div>"+
       "<div class=\\"add-row\\">"+
         "<input class=\\"add-inp\\" type=\\"text\\" id=\\"ai"+i+"\\" placeholder=\\"代號，如 2330 或 3550.TWO\\" maxlength=\\"12\\" onkeydown=\\"if(event.key===&quot;Enter&quot;)addS("+i+")\\">"+
         "<button class=\\"btn-add\\" onclick=\\"addS("+i+")\\">新增</button>"+
       "</div>"+
-      "<div class=\\"tbl-head\\"><span>代號</span><span style=\\"text-align:right\\">收盤價</span><span>買賣訊號</span><span style=\\"text-align:right\\">明日壓力</span><span style=\\"text-align:right\\">明日支撐</span><span></span></div>"+
+      "<div class=\\"tbl-head\\">"+
+        "<span>代號</span><span style=\\"text-align:right\\">收盤價</span><span>買賣訊號</span>"+
+        "<span style=\\"text-align:right\\">關鍵壓力</span><span style=\\"text-align:right\\">關鍵支撐</span><span></span>"+
+      "</div>"+
       "<div class=\\"stock-list\\" id=\\"sl"+i+"\\">"+renderRows(g.stocks,i)+"</div>"+
       "<div class=\\"bot\\">"+
         "<span class=\\"upd\\" id=\\"ut"+i+"\\"></span>"+
         "<button class=\\"btn-scan\\" id=\\"sb"+i+"\\" onclick=\\"scan("+i+")\\">&#128269; 掃描訊號</button>"+
       "</div>"+
       "</div>";
-    panelsEl.appendChild(panel);
+    pe.appendChild(p);
   });
 }
 
@@ -377,24 +304,23 @@ function renderRows(stocks,gi){
       "<span class=\\"c-id\\">"+esc(s.id)+"</span>"+
       "<span class=\\"c-price\\">"+price+"</span>"+
       "<span class=\\"c-sig "+cls+"\\">"+sig+" "+act+"</span>"+
-      "<span class=\\"c-lv\\">"+res+"</span>"+
-      "<span class=\\"c-lv\\">"+sup+"</span>"+
+      "<span class=\\"c-lv resist\\">"+res+"</span>"+
+      "<span class=\\"c-lv supprt\\">"+sup+"</span>"+
       "<span class=\\"c-del\\"><button class=\\"btn-del\\" onclick=\\"delS("+gi+","+si+")\\">&#xd7;</button></span>"+
       "</div>";
   }).join("");
 }
 
 function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-function rename(i,v){ groups[i].name=v; saveLocal(); document.querySelectorAll(".tab")[i].textContent=v||("群組"+(i+1)); }
+function ren(i,v){ groups[i].name=v; saveL(); document.querySelectorAll(".tab")[i].textContent=v||("群組"+(i+1)); }
 function addS(i){
-  var inp=document.getElementById("ai"+i);
-  var val=inp.value.trim().toUpperCase();
+  var inp=document.getElementById("ai"+i),val=inp.value.trim().toUpperCase();
   if(!val) return;
   if(groups[i].stocks.find(function(s){return s.id===val;})){ alert("已存在此代號"); return; }
-  groups[i].stocks.push({id:val}); saveLocal(); inp.value="";
+  groups[i].stocks.push({id:val}); saveL(); inp.value="";
   document.getElementById("sl"+i).innerHTML=renderRows(groups[i].stocks,i);
 }
-function delS(gi,si){ groups[gi].stocks.splice(si,1); saveLocal(); document.getElementById("sl"+gi).innerHTML=renderRows(groups[gi].stocks,gi); }
+function delS(gi,si){ groups[gi].stocks.splice(si,1); saveL(); document.getElementById("sl"+gi).innerHTML=renderRows(groups[gi].stocks,gi); }
 function scan(i){
   var stocks=groups[i].stocks;
   if(!stocks||stocks.length===0){ alert("請先新增股票"); return; }
@@ -409,7 +335,7 @@ function scan(i){
         var r=data[s.id];
         if(r){s.signal=r.signal;s.action=r.action;s.price=r.price;s.hold_days=r.hold_days;s.resistance=r.resistance;s.support=r.support;}
       });
-      saveLocal();
+      saveL();
       document.getElementById("sl"+i).innerHTML=renderRows(stocks,i);
       var now=new Date();
       document.getElementById("ut"+i).textContent="更新 "+now.getFullYear()+"/"+(now.getMonth()+1)+"/"+now.getDate()+" "+now.getHours()+":"+String(now.getMinutes()).padStart(2,"0");

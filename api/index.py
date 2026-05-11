@@ -6,27 +6,35 @@ import pandas as pd
 app = Flask(__name__)
 CORS(app)
 
+GAS_URL = "https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec"
+
 def get_signal_20d(stock_id):
     try:
         if stock_id.endswith(".TWO"):
             ticker = stock_id
         else:
             ticker = stock_id + ".TW"
-        df = yf.download(ticker, period="40d",
-                        auto_adjust=True, progress=False)
-        if df.empty or len(df) < 5:
+        df = yf.download(ticker, period="60d", auto_adjust=True, progress=False)
+        if df.empty or len(df) < 20:
             return None
         if isinstance(df.columns, pd.MultiIndex):
             close = df['Close'].iloc[:, 0].dropna()
+            high  = df['High'].iloc[:, 0].dropna()
+            low   = df['Low'].iloc[:, 0].dropna()
+            vol   = df['Volume'].iloc[:, 0].dropna()
         else:
             close = df['Close'].dropna()
-        close = close.iloc[-20:]
+            high  = df['High'].dropna()
+            low   = df['Low'].dropna()
+            vol   = df['Volume'].dropna()
+
+        c20 = close.iloc[-20:]
         status  = 'watching'
         buy_day = None
-        for i in range(2, len(close)):
-            price      = float(close.iloc[i])
-            prev2_high = float(close.iloc[i-2:i].max())
-            prev2_low  = float(close.iloc[i-2:i].min())
+        for i in range(2, len(c20)):
+            price      = float(c20.iloc[i])
+            prev2_high = float(c20.iloc[i-2:i].max())
+            prev2_low  = float(c20.iloc[i-2:i].min())
             if status == 'watching':
                 if price > prev2_high:
                     status  = 'holding'
@@ -35,28 +43,101 @@ def get_signal_20d(stock_id):
                 if price < prev2_low:
                     status  = 'watching'
                     buy_day = None
-        price      = float(close.iloc[-1])
-        prev2_high = float(close.iloc[-3:-1].max())
-        prev2_low  = float(close.iloc[-3:-1].min())
+
+        price      = float(c20.iloc[-1])
+        prev2_high = float(c20.iloc[-3:-1].max())
+        prev2_low  = float(c20.iloc[-3:-1].min())
+
         if status == 'holding':
             if price < prev2_low:
                 signal, action = '🔴', '賣出'
-            elif buy_day == len(close) - 1:
+            elif buy_day == len(c20) - 1:
                 signal, action = '🟢', '買進'
             else:
                 signal, action = '🟡', '持有'
-            hold_days = (len(close) - 1) - buy_day if buy_day is not None else 0
+            hold_days = (len(c20) - 1) - buy_day if buy_day is not None else 0
         else:
             if price > prev2_high:
                 signal, action = '🟢', '買進'
             else:
                 signal, action = '⬜', '空手'
             hold_days = 0
+
+        def get_radius(p):
+            if p < 50:   return 0.5
+            if p < 200:  return 1.0
+            if p < 500:  return 3.0
+            return 5.0
+
+        h5  = float(high.iloc[-5:].max())
+        h10 = float(high.iloc[-10:].max())
+        h20 = float(high.iloc[-20:].max())
+        l5  = float(low.iloc[-5:].min())
+        l10 = float(low.iloc[-10:].min())
+        l20 = float(low.iloc[-20:].min())
+        ma5  = float(close.iloc[-5:].mean())
+        ma20 = float(close.iloc[-20:].mean())
+        ma60 = float(close.iloc[-60:].mean()) if len(close) >= 60 else ma20
+        trend_up = price > ma60
+        vol_max_idx = int(vol.iloc[-20:].values.argmax())
+        vk_high = float(high.iloc[-20:].iloc[vol_max_idx])
+        vk_low  = float(low.iloc[-20:].iloc[vol_max_idx])
+
+        import math
+        def nearest_integer(p):
+            base = math.floor(p / 50) * 50
+            candidates = [base + mult * 50 for mult in range(-2, 4)]
+            return min(candidates, key=lambda x: abs(x - p))
+
+        int_level = nearest_integer(price)
+        radius = get_radius(price)
+
+        resistance_candidates = []
+        support_candidates = []
+
+        for val, weight in [(h5,2),(h10,2),(h20,2),(vk_high,3),(int_level,1)]:
+            if val > price:
+                resistance_candidates.append((val, weight))
+        if not trend_up:
+            for val, weight in [(ma5,2),(ma20,2),(ma60,2)]:
+                if val > price:
+                    resistance_candidates.append((val, weight))
+
+        for val, weight in [(l5,2),(l10,2),(l20,2),(vk_low,3),(int_level,1)]:
+            if val < price:
+                support_candidates.append((val, weight))
+        if trend_up:
+            for val, weight in [(ma5,2),(ma20,2),(ma60,2)]:
+                if val < price:
+                    support_candidates.append((val, weight))
+
+        def merge_levels(candidates, radius):
+            if not candidates:
+                return None
+            groups = []
+            for val, w in sorted(candidates, key=lambda x: x[0]):
+                merged = False
+                for g in groups:
+                    if abs(val - g['center']) <= radius:
+                        g['score'] += w
+                        g['center'] = (g['center'] + val) / 2
+                        merged = True
+                        break
+                if not merged:
+                    groups.append({'center': val, 'score': w})
+            best = max(groups, key=lambda x: x['score'])
+            return round(best['center'], 2)
+
+        resistance = merge_levels(resistance_candidates, radius)
+        support    = merge_levels(support_candidates, radius)
+
         return {
-            'signal':    signal,
-            'action':    action,
-            'price':     round(price, 2),
-            'hold_days': hold_days,
+            'signal':     signal,
+            'action':     action,
+            'price':      round(price, 2),
+            'hold_days':  hold_days,
+            'resistance': resistance,
+            'support':    support,
         }
     except:
         return None
@@ -86,181 +167,257 @@ HTML_PAGE = """<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>GA 買賣訊號</title>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #0f172a; color: #e2e8f0;
-  min-height: 100vh; padding: 24px 16px;
+:root {
+  --bg:      #000;
+  --bg2:     #0a0a0a;
+  --bg3:     #141414;
+  --bg4:     #1c1c1e;
+  --border:  rgba(255,255,255,0.08);
+  --text1:   #f5f5f7;
+  --text2:   #a1a1a6;
+  --text3:   #48484a;
+  --accent:  #0a84ff;
+  --green:   #30d158;
+  --yellow:  #ffd60a;
+  --red:     #ff453a;
+  --grey:    #636366;
+  --radius:  14px;
+  --radius-s:10px;
 }
-h1 { font-size: 1.6rem; text-align: center; color: #f8fafc; margin-bottom: 4px; }
-.subtitle { text-align: center; color: #64748b; font-size: 0.85rem; margin-bottom: 24px; }
-.tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 16px; padding-bottom: 4px; }
-.tab {
-  flex-shrink: 0; padding: 8px 14px; border-radius: 20px;
-  border: 1px solid #334155; background: #1e293b; color: #94a3b8;
-  cursor: pointer; font-size: 0.85rem; white-space: nowrap; transition: all 0.2s;
-}
-.tab.active { background: #6366f1; border-color: #6366f1; color: white; font-weight: 600; }
-.panel { display: none; }
-.panel.active { display: block; }
-.card { background: #1e293b; border-radius: 14px; padding: 20px; margin-bottom: 16px; }
-.group-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-.group-name-input {
-  flex: 1; background: #0f172a; border: 1px solid #334155;
-  border-radius: 8px; padding: 8px 12px; color: #f1f5f9;
-  font-size: 1rem; font-weight: 600;
-}
-.group-name-input:focus { outline: none; border-color: #6366f1; }
-.btn { padding: 9px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: background 0.2s; }
-.btn-primary { background: #6366f1; color: white; }
-.btn-primary:hover { background: #4f46e5; }
-.btn-success { background: #10b981; color: white; }
-.btn-success:hover { background: #059669; }
-.btn-danger { background: transparent; border: 1px solid #ef4444; color: #ef4444; font-size: 0.75rem; padding: 4px 8px; border-radius: 6px; }
-.btn-danger:hover { background: #ef4444; color: white; }
-.add-row { display: flex; gap: 8px; margin-bottom: 16px; }
-.add-row input {
-  flex: 1; background: #0f172a; border: 1px solid #334155;
-  border-radius: 8px; padding: 9px 12px; color: #f1f5f9; font-size: 0.9rem;
-}
-.add-row input:focus { outline: none; border-color: #6366f1; }
-.stock-list { margin-bottom: 16px; }
-.stock-row { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #0f172a; gap: 10px; }
-.stock-row:last-child { border-bottom: none; }
-.stock-id { font-weight: 600; color: #f1f5f9; min-width: 70px; }
-.stock-signal { font-size: 1.3rem; }
-.stock-action { font-size: 0.9rem; font-weight: 600; min-width: 36px; }
-.stock-price { color: #94a3b8; font-size: 0.85rem; flex: 1; }
-.stock-days { color: #64748b; font-size: 0.8rem; min-width: 50px; text-align: right; }
-.signal-green { color: #4ade80; }
-.signal-yellow { color: #facc15; }
-.signal-red { color: #f87171; }
-.signal-white { color: #94a3b8; }
-.empty-hint { color: #475569; font-size: 0.85rem; text-align: center; padding: 20px 0; }
-.loading-row { color: #64748b; font-size: 0.85rem; padding: 8px 0; text-align: center; }
-.scan-btn-row { display: flex; justify-content: flex-end; }
-.updated-time { color: #475569; font-size: 0.75rem; text-align: right; margin-top: 8px; }
+* { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+body { font-family:-apple-system,"Helvetica Neue",sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; padding-bottom:40px; }
+.header { padding:52px 20px 0; margin-bottom:24px; }
+.header h1 { font-size:1.9rem; font-weight:700; letter-spacing:-0.04em; }
+.header p  { font-size:0.78rem; color:var(--text3); margin-top:3px; letter-spacing:0.03em; }
+.tabs-wrap { padding:0 16px; margin-bottom:16px; overflow-x:auto; scrollbar-width:none; }
+.tabs-wrap::-webkit-scrollbar { display:none; }
+.tabs { display:flex; gap:8px; width:max-content; }
+.tab { padding:6px 15px; border-radius:20px; font-size:0.82rem; font-weight:500; cursor:pointer; border:1px solid var(--border); color:var(--text2); background:var(--bg4); transition:all .2s; white-space:nowrap; }
+.tab.active { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+.panel { display:none; padding:0 16px; }
+.panel.active { display:block; }
+.card { background:var(--bg4); border-radius:var(--radius); border:1px solid var(--border); overflow:hidden; }
+.gname-wrap { padding:16px 16px 12px; }
+.gname { width:100%; background:transparent; border:none; font-size:1.05rem; font-weight:600; color:var(--text1); font-family:inherit; letter-spacing:-0.02em; }
+.gname:focus { outline:none; }
+.sep { height:1px; background:var(--border); }
+.add-row { display:flex; gap:8px; padding:12px 16px; }
+.add-inp { flex:1; background:var(--bg3); border:1px solid var(--border); border-radius:var(--radius-s); padding:9px 13px; color:var(--text1); font-size:0.88rem; font-family:inherit; transition:border-color .2s; }
+.add-inp:focus { outline:none; border-color:var(--accent); }
+.add-inp::placeholder { color:var(--text3); }
+.btn-add { padding:9px 16px; border-radius:var(--radius-s); border:none; background:var(--accent); color:#fff; font-size:0.85rem; font-weight:600; cursor:pointer; font-family:inherit; transition:opacity .2s; }
+.btn-add:active { opacity:.7; }
+.tbl-head { display:grid; grid-template-columns:58px 64px 80px 64px 64px 28px; gap:4px; padding:6px 16px 8px; }
+.tbl-head span { font-size:0.65rem; color:var(--text3); font-weight:600; letter-spacing:0.05em; text-transform:uppercase; }
+.tbl-head span:nth-child(2),.tbl-head span:nth-child(4),.tbl-head span:nth-child(5) { text-align:right; }
+.stock-list {}
+.srow { display:grid; grid-template-columns:58px 64px 80px 64px 64px 28px; gap:4px; align-items:center; padding:11px 16px; border-top:1px solid var(--border); }
+.srow:active { background:rgba(255,255,255,0.03); }
+.c-id { font-size:0.88rem; font-weight:600; color:var(--text1); }
+.c-price { font-size:0.88rem; font-weight:500; color:var(--text1); text-align:right; }
+.c-sig { font-size:0.8rem; font-weight:600; display:flex; align-items:center; gap:4px; }
+.c-lv { font-size:0.82rem; color:var(--text2); text-align:right; }
+.c-del { display:flex; justify-content:flex-end; }
+.btn-del { width:22px; height:22px; border-radius:50%; border:none; background:rgba(255,69,58,.12); color:var(--red); font-size:0.9rem; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .2s; }
+.btn-del:active { background:rgba(255,69,58,.35); }
+.sig-g { color:var(--green); }
+.sig-y { color:var(--yellow); }
+.sig-r { color:var(--red); }
+.sig-w { color:var(--grey); }
+.empty { padding:28px 16px; text-align:center; color:var(--text3); font-size:0.82rem; border-top:1px solid var(--border); }
+.loading { padding:20px 16px; text-align:center; color:var(--text3); font-size:0.82rem; border-top:1px solid var(--border); }
+.err { padding:12px 16px; color:var(--red); font-size:0.8rem; border-top:1px solid var(--border); }
+.bot { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-top:1px solid var(--border); }
+.upd { font-size:0.7rem; color:var(--text3); }
+.btn-scan { padding:8px 18px; border-radius:20px; border:none; background:var(--green); color:#000; font-size:0.82rem; font-weight:700; cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:5px; transition:opacity .2s; }
+.btn-scan:active { opacity:.7; }
+.btn-scan:disabled { background:var(--bg3); color:var(--text3); cursor:not-allowed; }
+.sync-bar { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:8px 16px 0; }
+.btn-sync { padding:6px 14px; border-radius:20px; border:1px solid var(--border); background:transparent; color:var(--text2); font-size:0.75rem; font-weight:500; cursor:pointer; font-family:inherit; transition:all .2s; }
+.btn-sync:active { background:var(--bg4); }
+.sync-status { font-size:0.72rem; color:var(--text3); }
 </style>
 </head>
 <body>
-<h1>&#128200; GA 買賣訊號</h1>
-<p class="subtitle">2日高低點突破系統</p>
-<div class="tabs" id="tabs"></div>
+<div class="header">
+  <h1>&#9989; GA 買賣訊號</h1>
+  <p>2 日高低點突破系統</p>
+</div>
+<div class="sync-bar">
+  <span class="sync-status" id="syncStatus">尚未同步</span>
+  <button class="btn-sync" onclick="syncDown()">&#9729; 從雲端載入</button>
+  <button class="btn-sync" onclick="syncUp()">&#8593; 儲存至雲端</button>
+</div>
+<div class="tabs-wrap"><div class="tabs" id="tabs"></div></div>
 <div id="panels"></div>
+
 <script>
+var GAS = "https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec";
 var DEFAULT_GROUPS = [
-  { name: "短線強勢股", stocks: [] },
-  { name: "波段持股", stocks: [] },
-  { name: "觀察名單", stocks: [] },
-  { name: "自選群組4", stocks: [] },
-  { name: "自選群組5", stocks: [] }
+  {name:"短線強勢股",stocks:[]},
+  {name:"波段持股",stocks:[]},
+  {name:"觀察名單",stocks:[]},
+  {name:"自選群組4",stocks:[]},
+  {name:"自選群組5",stocks:[]}
 ];
-function loadGroups() {
-  try {
-    var saved = localStorage.getItem("ga_groups");
-    return saved ? JSON.parse(saved) : DEFAULT_GROUPS;
-  } catch(e) { return DEFAULT_GROUPS; }
+function loadLocal() {
+  try { var s=localStorage.getItem("ga_v3"); return s?JSON.parse(s):DEFAULT_GROUPS; } catch(e){ return DEFAULT_GROUPS; }
 }
-function saveGroups() { localStorage.setItem("ga_groups", JSON.stringify(groups)); }
-var groups = loadGroups();
+function saveLocal() { localStorage.setItem("ga_v3",JSON.stringify(groups)); }
+
+var groups = loadLocal();
 var activeTab = 0;
 
+// 雲端同步：把 groups 轉成二維陣列存到 GAS
+// 格式：每行 = [groupIdx, groupName, stockId]
+function groupsToRows(gs) {
+  var rows = [];
+  gs.forEach(function(g,gi){
+    if(g.stocks && g.stocks.length>0){
+      g.stocks.forEach(function(s){
+        rows.push([gi, g.name, s.id]);
+      });
+    } else {
+      rows.push([gi, g.name, '']);
+    }
+  });
+  return rows;
+}
+function rowsToGroups(rows) {
+  var gs = DEFAULT_GROUPS.map(function(g){ return {name:g.name, stocks:[]}; });
+  rows.forEach(function(r){
+    if(!r || r.length<3) return;
+    var gi = parseInt(r[0]);
+    if(isNaN(gi)||gi<0||gi>4) return;
+    gs[gi].name = r[1] || gs[gi].name;
+    if(r[2]) gs[gi].stocks.push({id:String(r[2])});
+  });
+  return gs;
+}
+
+function setSyncStatus(msg) {
+  document.getElementById("syncStatus").textContent = msg;
+}
+
+function syncUp() {
+  setSyncStatus("儲存中...");
+  var rows = groupsToRows(groups);
+  var url = GAS + "?action=save&payload=" + encodeURIComponent(JSON.stringify(rows));
+  fetch(url)
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.ok) setSyncStatus("已儲存 " + new Date().toLocaleTimeString());
+      else setSyncStatus("儲存失敗");
+    })
+    .catch(function(){ setSyncStatus("儲存失敗"); });
+}
+
+function syncDown() {
+  setSyncStatus("載入中...");
+  var url = GAS + "?action=load";
+  fetch(url)
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.data && d.data.length>0){
+        groups = rowsToGroups(d.data);
+        saveLocal();
+        activeTab = 0;
+        render();
+        setSyncStatus("已載入 " + new Date().toLocaleTimeString());
+      } else {
+        setSyncStatus("雲端無資料");
+      }
+    })
+    .catch(function(){ setSyncStatus("載入失敗"); });
+}
+
 function render() {
-  var tabsEl = document.getElementById("tabs");
-  var panelsEl = document.getElementById("panels");
-  tabsEl.innerHTML = "";
-  panelsEl.innerHTML = "";
-  groups.forEach(function(g, i) {
-    var tab = document.createElement("div");
-    tab.className = "tab" + (i === activeTab ? " active" : "");
-    tab.textContent = g.name || ("群組" + (i+1));
-    tab.onclick = (function(idx){ return function(){ activeTab = idx; render(); }; })(i);
+  var tabsEl=document.getElementById("tabs");
+  var panelsEl=document.getElementById("panels");
+  tabsEl.innerHTML=""; panelsEl.innerHTML="";
+  groups.forEach(function(g,i){
+    var tab=document.createElement("div");
+    tab.className="tab"+(i===activeTab?" active":"");
+    tab.textContent=g.name||("群組"+(i+1));
+    tab.onclick=(function(idx){return function(){activeTab=idx;render();};})(i);
     tabsEl.appendChild(tab);
-    var panel = document.createElement("div");
-    panel.className = "panel" + (i === activeTab ? " active" : "");
-    panel.innerHTML =
-      "<div class=\\"card\\">" +
-      "<div class=\\"group-header\\">" +
-      "<input class=\\"group-name-input\\" value=\\"" + g.name + "\\" placeholder=\\"群組名稱\\" onchange=\\"renameGroup(" + i + ", this.value)\\">" +
-      "</div>" +
-      "<div class=\\"add-row\\">" +
-      "<input type=\\"text\\" id=\\"addInput" + i + "\\" placeholder=\\"輸入代號，如 2330 或 3550.TWO\\" maxlength=\\"12\\" onkeydown=\\"if(event.key===&quot;Enter&quot;) addStock(" + i + ")\\">" +
-      "<button class=\\"btn btn-primary\\" onclick=\\"addStock(" + i + ")\\">新增</button>" +
-      "</div>" +
-      "<div class=\\"stock-list\\" id=\\"stockList" + i + "\\">" + renderStockRows(g.stocks, i) + "</div>" +
-      "<div class=\\"scan-btn-row\\">" +
-      "<button class=\\"btn btn-success\\" onclick=\\"scanGroup(" + i + ")\\">🔍 掃描訊號</button>" +
-      "</div>" +
-      "<div class=\\"updated-time\\" id=\\"updatedTime" + i + "\\"></div>" +
+    var panel=document.createElement("div");
+    panel.className="panel"+(i===activeTab?" active":"");
+    panel.innerHTML=
+      "<div class=\\"card\\">"+
+      "<div class=\\"gname-wrap\\"><input class=\\"gname\\" value=\\""+esc(g.name)+"\\" placeholder=\\"群組名稱\\" onchange=\\"rename("+i+",this.value)\\"></div>"+
+      "<div class=\\"sep\\"></div>"+
+      "<div class=\\"add-row\\">"+
+        "<input class=\\"add-inp\\" type=\\"text\\" id=\\"ai"+i+"\\" placeholder=\\"代號，如 2330 或 3550.TWO\\" maxlength=\\"12\\" onkeydown=\\"if(event.key===&quot;Enter&quot;)addS("+i+")\\">"+
+        "<button class=\\"btn-add\\" onclick=\\"addS("+i+")\\">新增</button>"+
+      "</div>"+
+      "<div class=\\"tbl-head\\"><span>代號</span><span style=\\"text-align:right\\">收盤價</span><span>買賣訊號</span><span style=\\"text-align:right\\">明日壓力</span><span style=\\"text-align:right\\">明日支撐</span><span></span></div>"+
+      "<div class=\\"stock-list\\" id=\\"sl"+i+"\\">"+renderRows(g.stocks,i)+"</div>"+
+      "<div class=\\"bot\\">"+
+        "<span class=\\"upd\\" id=\\"ut"+i+"\\"></span>"+
+        "<button class=\\"btn-scan\\" id=\\"sb"+i+"\\" onclick=\\"scan("+i+")\\">&#128269; 掃描訊號</button>"+
+      "</div>"+
       "</div>";
     panelsEl.appendChild(panel);
   });
 }
 
-function renderStockRows(stocks, gi) {
-  if (!stocks || stocks.length === 0)
-    return "<div class=\\"empty-hint\\">尚未新增股票，輸入代號後點「新增」</div>";
-  return stocks.map(function(s, si) {
-    var sig = s.signal || "⬜";
-    var act = s.action || "—";
-    var price = s.price ? s.price + " 元" : "—";
-    var days = s.hold_days > 0 ? s.hold_days + " 天" : "";
-    var colorClass = sig === "🟢" ? "signal-green" : sig === "🟡" ? "signal-yellow" : sig === "🔴" ? "signal-red" : "signal-white";
-    return "<div class=\\"stock-row\\">" +
-      "<span class=\\"stock-id\\">" + s.id + "</span>" +
-      "<span class=\\"stock-signal\\">" + sig + "</span>" +
-      "<span class=\\"stock-action " + colorClass + "\\">" + act + "</span>" +
-      "<span class=\\"stock-price\\">" + price + "</span>" +
-      "<span class=\\"stock-days\\">" + days + "</span>" +
-      "<button class=\\"btn btn-danger\\" onclick=\\"removeStock(" + gi + "," + si + ")\\">刪除</button>" +
+function renderRows(stocks,gi){
+  if(!stocks||stocks.length===0) return "<div class=\\"empty\\">尚未新增股票</div>";
+  return stocks.map(function(s,si){
+    var sig=s.signal||"⬜",act=s.action||"—";
+    var price=s.price!=null?s.price:"—";
+    var res=s.resistance!=null?s.resistance:"—";
+    var sup=s.support!=null?s.support:"—";
+    var cls=sig==="🟢"?"sig-g":sig==="🟡"?"sig-y":sig==="🔴"?"sig-r":"sig-w";
+    return "<div class=\\"srow\\">"+
+      "<span class=\\"c-id\\">"+esc(s.id)+"</span>"+
+      "<span class=\\"c-price\\">"+price+"</span>"+
+      "<span class=\\"c-sig "+cls+"\\">"+sig+" "+act+"</span>"+
+      "<span class=\\"c-lv\\">"+res+"</span>"+
+      "<span class=\\"c-lv\\">"+sup+"</span>"+
+      "<span class=\\"c-del\\"><button class=\\"btn-del\\" onclick=\\"delS("+gi+","+si+")\\">&#xd7;</button></span>"+
       "</div>";
   }).join("");
 }
 
-function renameGroup(i, name) {
-  groups[i].name = name;
-  saveGroups();
-  document.querySelectorAll(".tab")[i].textContent = name || ("群組"+(i+1));
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function rename(i,v){ groups[i].name=v; saveLocal(); document.querySelectorAll(".tab")[i].textContent=v||("群組"+(i+1)); }
+function addS(i){
+  var inp=document.getElementById("ai"+i);
+  var val=inp.value.trim().toUpperCase();
+  if(!val) return;
+  if(groups[i].stocks.find(function(s){return s.id===val;})){ alert("已存在此代號"); return; }
+  groups[i].stocks.push({id:val}); saveLocal(); inp.value="";
+  document.getElementById("sl"+i).innerHTML=renderRows(groups[i].stocks,i);
 }
-function addStock(i) {
-  var input = document.getElementById("addInput"+i);
-  var val = input.value.trim().toUpperCase();
-  if (!val) return;
-  if (groups[i].stocks.find(function(s){ return s.id === val; })) { alert("已存在此代號"); return; }
-  groups[i].stocks.push({ id: val });
-  saveGroups();
-  input.value = "";
-  document.getElementById("stockList"+i).innerHTML = renderStockRows(groups[i].stocks, i);
-}
-function removeStock(gi, si) {
-  groups[gi].stocks.splice(si, 1);
-  saveGroups();
-  document.getElementById("stockList"+gi).innerHTML = renderStockRows(groups[gi].stocks, gi);
-}
-function scanGroup(i) {
-  var stocks = groups[i].stocks;
-  if (!stocks || stocks.length === 0) { alert("請先新增股票"); return; }
-  var ids = stocks.map(function(s){ return s.id; }).join(",");
-  document.getElementById("stockList"+i).innerHTML = "<div class=\\"loading-row\\">⏳ 查詢中，請稍候...</div>";
-  fetch("/api/batch?ids=" + encodeURIComponent(ids))
-    .then(function(res){ return res.json(); })
-    .then(function(data) {
-      stocks.forEach(function(s) {
-        var r = data[s.id];
-        if (r) { s.signal = r.signal; s.action = r.action; s.price = r.price; s.hold_days = r.hold_days; }
+function delS(gi,si){ groups[gi].stocks.splice(si,1); saveLocal(); document.getElementById("sl"+gi).innerHTML=renderRows(groups[gi].stocks,gi); }
+function scan(i){
+  var stocks=groups[i].stocks;
+  if(!stocks||stocks.length===0){ alert("請先新增股票"); return; }
+  var ids=stocks.map(function(s){return s.id;}).join(",");
+  var btn=document.getElementById("sb"+i);
+  btn.disabled=true; btn.textContent="查詢中...";
+  document.getElementById("sl"+i).innerHTML="<div class=\\"loading\\">&#9203; 查詢中，請稍候...</div>";
+  fetch("/api/batch?ids="+encodeURIComponent(ids))
+    .then(function(r){return r.json();})
+    .then(function(data){
+      stocks.forEach(function(s){
+        var r=data[s.id];
+        if(r){s.signal=r.signal;s.action=r.action;s.price=r.price;s.hold_days=r.hold_days;s.resistance=r.resistance;s.support=r.support;}
       });
-      saveGroups();
-      document.getElementById("stockList"+i).innerHTML = renderStockRows(stocks, i);
-      var now = new Date();
-      document.getElementById("updatedTime"+i).textContent =
-        "更新時間：" + now.getFullYear() + "/" + (now.getMonth()+1) + "/" + now.getDate() +
-        " " + now.getHours() + ":" + String(now.getMinutes()).padStart(2,"0");
+      saveLocal();
+      document.getElementById("sl"+i).innerHTML=renderRows(stocks,i);
+      var now=new Date();
+      document.getElementById("ut"+i).textContent="更新 "+now.getFullYear()+"/"+(now.getMonth()+1)+"/"+now.getDate()+" "+now.getHours()+":"+String(now.getMinutes()).padStart(2,"0");
+      btn.disabled=false; btn.innerHTML="&#128269; 掃描訊號";
     })
-    .catch(function() {
-      document.getElementById("stockList"+i).innerHTML = "<div class=\\"loading-row\\" style=\\"color:#f87171\\">❌ 連線失敗，請稍後再試</div>";
+    .catch(function(){
+      document.getElementById("sl"+i).innerHTML="<div class=\\"err\\">&#10060; 連線失敗，請稍後再試</div>";
+      btn.disabled=false; btn.innerHTML="&#128269; 掃描訊號";
     });
 }
 render();

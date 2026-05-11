@@ -70,6 +70,7 @@ def check_stock():
     if result is None:
         return jsonify({'error': '查無資料，請確認代號'}), 404
     return jsonify(result)
+
 @app.route('/api/batch', methods=['GET'])
 def batch_check():
     ids = request.args.get('ids', '')
@@ -80,6 +81,7 @@ def batch_check():
     for stock_id in stock_list:
         results[stock_id] = get_signal_20d(stock_id)
     return jsonify(results)
+
 @app.route('/')
 def home():
     return '''<!DOCTYPE html>
@@ -89,126 +91,113 @@ def home():
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GA 買賣訊號</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: #0f172a;
-    color: #e2e8f0;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 40px 20px;
-  }
-  h1 { font-size: 1.8rem; margin-bottom: 8px; color: #f8fafc; }
-  .subtitle { color: #94a3b8; font-size: 0.9rem; margin-bottom: 32px; }
-  .card {
-    background: #1e293b;
-    border-radius: 16px;
-    padding: 28px;
-    width: 100%;
-    max-width: 420px;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-  }
-  .input-row {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-  }
-  input {
-    flex: 1;
-    padding: 12px 16px;
-    border-radius: 10px;
-    border: 1px solid #334155;
-    background: #0f172a;
-    color: #f1f5f9;
-    font-size: 1rem;
-    outline: none;
-  }
-  input:focus { border-color: #6366f1; }
-  button {
-    padding: 12px 20px;
-    border-radius: 10px;
-    border: none;
-    background: #6366f1;
-    color: white;
-    font-size: 1rem;
-    cursor: pointer;
-    font-weight: 600;
-    transition: background 0.2s;
-  }
-  button:hover { background: #4f46e5; }
-  button:disabled { background: #334155; cursor: not-allowed; }
-  .result {
-    text-align: center;
-    padding: 20px;
-    border-radius: 12px;
-    background: #0f172a;
-    display: none;
-  }
-  .signal-icon { font-size: 3rem; margin-bottom: 8px; }
-  .action { font-size: 1.5rem; font-weight: 700; margin-bottom: 12px; }
-  .info { color: #94a3b8; font-size: 0.9rem; line-height: 1.8; }
-  .error { color: #f87171; text-align: center; padding: 12px; display: none; }
-  .loading { text-align: center; color: #94a3b8; padding: 12px; display: none; }
-  .hint { color: #475569; font-size: 0.8rem; margin-top: 12px; text-align: center; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0f172a; color: #e2e8f0;
+  min-height: 100vh; padding: 24px 16px;
+}
+h1 { font-size: 1.6rem; text-align: center; color: #f8fafc; margin-bottom: 4px; }
+.subtitle { text-align: center; color: #64748b; font-size: 0.85rem; margin-bottom: 24px; }
+.tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 16px; padding-bottom: 4px; }
+.tab {
+  flex-shrink: 0; padding: 8px 14px; border-radius: 20px;
+  border: 1px solid #334155; background: #1e293b; color: #94a3b8;
+  cursor: pointer; font-size: 0.85rem; white-space: nowrap; transition: all 0.2s;
+}
+.tab.active { background: #6366f1; border-color: #6366f1; color: white; font-weight: 600; }
+.panel { display: none; }
+.panel.active { display: block; }
+.card { background: #1e293b; border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+.group-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.group-name-input {
+  flex: 1; background: #0f172a; border: 1px solid #334155;
+  border-radius: 8px; padding: 8px 12px; color: #f1f5f9;
+  font-size: 1rem; font-weight: 600;
+}
+.group-name-input:focus { outline: none; border-color: #6366f1; }
+.btn { padding: 9px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: background 0.2s; }
+.btn-primary { background: #6366f1; color: white; }
+.btn-primary:hover { background: #4f46e5; }
+.btn-success { background: #10b981; color: white; }
+.btn-success:hover { background: #059669; }
+.btn-danger { background: transparent; border: 1px solid #ef4444; color: #ef4444; font-size: 0.75rem; padding: 4px 8px; border-radius: 6px; }
+.btn-danger:hover { background: #ef4444; color: white; }
+.add-row { display: flex; gap: 8px; margin-bottom: 16px; }
+.add-row input {
+  flex: 1; background: #0f172a; border: 1px solid #334155;
+  border-radius: 8px; padding: 9px 12px; color: #f1f5f9; font-size: 0.9rem;
+}
+.add-row input:focus { outline: none; border-color: #6366f1; }
+.stock-list { margin-bottom: 16px; }
+.stock-row { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #0f172a; gap: 10px; }
+.stock-row:last-child { border-bottom: none; }
+.stock-id { font-weight: 600; color: #f1f5f9; min-width: 70px; }
+.stock-signal { font-size: 1.3rem; }
+.stock-action { font-size: 0.9rem; font-weight: 600; min-width: 36px; }
+.stock-price { color: #94a3b8; font-size: 0.85rem; flex: 1; }
+.stock-days { color: #64748b; font-size: 0.8rem; min-width: 50px; text-align: right; }
+.signal-green { color: #4ade80; }
+.signal-yellow { color: #facc15; }
+.signal-red { color: #f87171; }
+.signal-white { color: #94a3b8; }
+.empty-hint { color: #475569; font-size: 0.85rem; text-align: center; padding: 20px 0; }
+.loading-row { color: #64748b; font-size: 0.85rem; padding: 8px 0; text-align: center; }
+.scan-btn-row { display: flex; justify-content: flex-end; }
+.updated-time { color: #475569; font-size: 0.75rem; text-align: right; margin-top: 8px; }
 </style>
 </head>
 <body>
 <h1>📈 GA 買賣訊號</h1>
 <p class="subtitle">2日高低點突破系統</p>
-<div class="card">
-  <div class="input-row">
-    <input type="text" id="stockInput" placeholder="輸入股票代號，如 2330" maxlength="10">
-    <button id="checkBtn" onclick="checkStock()">查詢</button>
-  </div>
-  <div class="loading" id="loading">⏳ 查詢中，請稍候...</div>
-  <div class="error" id="error"></div>
-  <div class="result" id="result">
-    <div class="signal-icon" id="signalIcon"></div>
-    <div class="action" id="actionText"></div>
-    <div class="info" id="infoText"></div>
-  </div>
-  <p class="hint">上市輸入代號如 2330，上櫃輸入如 3550.TWO</p>
-</div>
+<div class="tabs" id="tabs"></div>
+<div id="panels"></div>
 <script>
-  document.getElementById('stockInput').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') checkStock();
-  });
+const DEFAULT_GROUPS = [
+  { name: "短線強勢股", stocks: [] },
+  { name: "波段持股", stocks: [] },
+  { name: "觀察名單", stocks: [] },
+  { name: "自選群組4", stocks: [] },
+  { name: "自選群組5", stocks: [] }
+];
+function loadGroups() {
+  try {
+    const saved = localStorage.getItem("ga_groups");
+    return saved ? JSON.parse(saved) : DEFAULT_GROUPS;
+  } catch(e) { return DEFAULT_GROUPS; }
+}
+function saveGroups() { localStorage.setItem("ga_groups", JSON.stringify(groups)); }
+let groups = loadGroups();
+let activeTab = 0;
 
-  async function checkStock() {
-    const id = document.getElementById('stockInput').value.trim();
-    if (!id) return;
-    document.getElementById('result').style.display = 'none';
-    document.getElementById('error').style.display = 'none';
-    document.getElementById('loading').style.display = 'block';
-    document.getElementById('checkBtn').disabled = true;
-    try {
-      const res = await fetch('/api/check?id=' + encodeURIComponent(id));
-      const data = await res.json();
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('checkBtn').disabled = false;
-      if (data.error) {
-        document.getElementById('error').textContent = '❌ ' + data.error;
-        document.getElementById('error').style.display = 'block';
-      } else {
-        document.getElementById('signalIcon').textContent = data.signal;
-        document.getElementById('actionText').textContent = data.action;
-        document.getElementById('infoText').innerHTML =
-          '現價：<strong>' + data.price + '</strong> 元<br>' +
-          (data.hold_days > 0 ? '持有天數：<strong>' + data.hold_days + '</strong> 天' : '今日訊號');
-        document.getElementById('result').style.display = 'block';
-      }
-    } catch(e) {
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('checkBtn').disabled = false;
-      document.getElementById('error').textContent = '❌ 連線失敗，請稍後再試';
-      document.getElementById('error').style.display = 'block';
-    }
-  }
-</script>
-</body>
-</html>'''
-
-if __name__ == '__main__':
-    app.run()
+function render() {
+  const tabsEl = document.getElementById("tabs");
+  const panelsEl = document.getElementById("panels");
+  tabsEl.innerHTML = "";
+  panelsEl.innerHTML = "";
+  groups.forEach((g, i) => {
+    const tab = document.createElement("div");
+    tab.className = "tab" + (i === activeTab ? " active" : "");
+    tab.textContent = g.name || ("群組" + (i+1));
+    tab.onclick = () => { activeTab = i; render(); };
+    tabsEl.appendChild(tab);
+    const panel = document.createElement("div");
+    panel.className = "panel" + (i === activeTab ? " active" : "");
+    panel.innerHTML = `
+      <div class="card">
+        <div class="group-header">
+          <input class="group-name-input" value="${g.name}" placeholder="群組名稱"
+            onchange="renameGroup(${i}, this.value)">
+        </div>
+        <div class="add-row">
+          <input type="text" id="addInput${i}" placeholder="輸入代號，如 2330 或 3550.TWO" maxlength="12"
+            onkeydown="if(event.key==='Enter') addStock(${i})">
+          <button class="btn btn-primary" onclick="addStock(${i})">新增</button>
+        </div>
+        <div class="stock-list" id="stockList${i}">${renderStockRows(g.stocks, i, false)}</div>
+        <div class="scan-btn-row">
+          <button class="btn btn-success" onclick="scanGroup(${i})">🔍 掃描訊號</button>
+        </div>
+        <div class="updated-time" id="updatedTime${i}"></div>
+      </div>`;
+    panelsEl.appendC

@@ -660,17 +660,12 @@ async function loadCloud() {
     const res  = await fetch('/api/sync-load', { signal: AbortSignal.timeout(20000) });
     const json = await res.json();
     const rows = json.data || [];
-    console.log('sync-load rows:', rows.length, JSON.stringify(rows[0]));
     if (rows.length === 0) {
       alert('雲端無資料');
       btn.textContent = '⬇️ 載雲端'; btn.disabled = false; return;
     }
-    // 過濾掉空白列
-    const validRows = rows.filter(r => r && r[2] && String(r[2]).trim() !== '');
-    console.log('valid rows:', validRows.length);
-    const newGroups = DEFAULT_GROUPS.map((n, i) => ({ name: n, stocks: [] }));
     const validRows = rows.filter(r => r && String(r[2]||'').trim() !== '');
-    console.log('loadCloud: total rows:', rows.length, 'valid:', validRows.length);
+    const newGroups = DEFAULT_GROUPS.map((n, i) => ({ name: n, stocks: [] }));
     validRows.forEach(row => {
       const gi   = parseInt(row[0]);
       const name = row[1] || DEFAULT_GROUPS[gi];

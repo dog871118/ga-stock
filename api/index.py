@@ -593,14 +593,33 @@ function clearHistory() {
   renderHistPanel();
 }
 
-// ── 雲端同步（Google Sheet）────────────────────────────
+// ── 雲端同步（Google Sheet，JSONP 解決跨域）──────────────
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec';
+
+function gasJsonp(url) {
+  return new Promise((resolve, reject) => {
+    const cbName = '_gas_cb_' + Date.now();
+    const script = document.createElement('script');
+    const timer  = setTimeout(() => {
+      delete window[cbName];
+      document.body.removeChild(script);
+      reject(new Error('timeout'));
+    }, 15000);
+    window[cbName] = (data) => {
+      clearTimeout(timer);
+      delete window[cbName];
+      document.body.removeChild(script);
+      resolve(data);
+    };
+    script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cbName;
+    script.onerror = () => { clearTimeout(timer); reject(new Error('script error')); };
+    document.body.appendChild(script);
+  });
+}
 
 async function saveCloud() {
   const btn = document.getElementById('cloudSaveBtn');
   btn.textContent = '☁️ 儲存中…'; btn.disabled = true;
-  // 把群組資料轉成二維陣列存入 Sheet
-  // 格式：每列 = [群組index, 群組名稱, 股票代號]
   const rows = [];
   groups.forEach((g, gi) => {
     if (g.stocks && g.stocks.length > 0) {
@@ -611,7 +630,7 @@ async function saveCloud() {
   });
   try {
     const url = GAS_URL + '?action=save&payload=' + encodeURIComponent(JSON.stringify(rows));
-    await fetch(url, { mode: 'no-cors' });
+    await gasJsonp(url);
     btn.textContent = '✅ 已儲存';
     setTimeout(() => { btn.textContent = '☁️ 存雲端'; btn.disabled = false; }, 2000);
   } catch(e) {
@@ -624,13 +643,13 @@ async function loadCloud() {
   const btn = document.getElementById('cloudLoadBtn');
   btn.textContent = '⬇️ 載入中…'; btn.disabled = true;
   try {
-    const url = GAS_URL + '?action=load';
-    const res  = await fetch(url);
-    const json = await res.json();
+    const url  = GAS_URL + '?action=load';
+    const json = await gasJsonp(url);
     const rows = json.data || [];
-    if (rows.length === 0) { alert('雲端無資料'); btn.textContent = '⬇️ 載雲端'; btn.disabled = false; return; }
-
-    // 重建群組（保留5個群組結構）
+    if (rows.length === 0) {
+      alert('雲端無資料');
+      btn.textContent = '⬇️ 載雲端'; btn.disabled = false; return;
+    }
     const newGroups = DEFAULT_GROUPS.map((n, i) => ({ name: n, stocks: [] }));
     rows.forEach(row => {
       const gi   = parseInt(row[0]);
@@ -648,7 +667,6 @@ async function loadCloud() {
     render();
     btn.textContent = '✅ 已載入';
     setTimeout(() => { btn.textContent = '⬇️ 載雲端'; btn.disabled = false; }, 2000);
-    // 載入後自動掃描目前群組
     autoScanAll();
   } catch(e) {
     btn.textContent = '❌ 失敗'; btn.disabled = false;

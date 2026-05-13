@@ -126,152 +126,104 @@ HTML_PAGE = """<!DOCTYPE html>
 <title>GA 買賣訊號</title>
 <style>
 :root {
-  --bg:       #0d1b2a;
-  --card:     #132338;
-  --card2:    #0f1e30;
-  --border:   #1e3a5f;
-  --text1:    #e8f0fe;
-  --text2:    #4a6fa5;
-  --text3:    #2d5480;
-  --accent:   #1a73e8;
-  --green:    #34c759;
-  --yellow:   #ffd60a;
-  --red:      #ff453a;
-  --redtxt:   #ff6b6b;
-  --greentxt: #34c759;
-  --radius:   14px;
-  --radius-s: 8px;
+  --bg:      #0d1b2a;
+  --card:    #132338;
+  --card2:   #0f1e30;
+  --border:  #1e3a5f;
+  --text1:   #e8f0fe;
+  --text2:   #4a6fa5;
+  --text3:   #2d5480;
+  --accent:  #1a73e8;
+  --green:   #34c759;
+  --yellow:  #ffd60a;
+  --red:     #ff453a;
+  --radius:  14px;
+  --radius-s:8px;
 }
 * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
-body {
-  font-family:-apple-system,"Helvetica Neue",sans-serif;
-  background:var(--bg); color:var(--text1);
-  min-height:100vh; padding-bottom:60px;
-}
-.wrap { max-width:860px; margin:0 auto; padding:0 24px; }
-
-/* Header */
-.header { padding:40px 0 12px; }
+body { font-family:-apple-system,"Helvetica Neue",sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; padding-bottom:60px; }
+.wrap { max-width:860px; margin:0 auto; padding:0 20px; }
+.header { padding:40px 0 10px; }
 .header-sub { font-size:11px; color:var(--text2); letter-spacing:0.1em; text-transform:uppercase; margin-bottom:6px; }
-.header h1 { font-size:28px; font-weight:800; color:var(--text1); letter-spacing:-0.03em; }
-
-/* Sync */
-.sync-bar { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding-bottom:12px; }
+.header h1 { font-size:26px; font-weight:800; color:var(--text1); letter-spacing:-0.03em; }
+.sync-bar { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding-bottom:10px; }
 .btn-sync { padding:5px 12px; border-radius:12px; border:1px solid var(--border); background:transparent; color:var(--text2); font-size:12px; cursor:pointer; font-family:inherit; }
-.btn-sync:active { opacity:.7; }
 .sync-st { font-size:11px; color:var(--text3); }
-
-/* Tabs */
-.tabs-wrap { margin-bottom:12px; overflow-x:auto; scrollbar-width:none; }
+.tabs-wrap { margin-bottom:10px; overflow-x:auto; scrollbar-width:none; }
 .tabs-wrap::-webkit-scrollbar { display:none; }
-.tabs { display:flex; gap:8px; width:max-content; }
-.tab { padding:6px 16px; border-radius:18px; font-size:13px; font-weight:500; cursor:pointer; border:1px solid var(--border); color:var(--text2); background:var(--card); white-space:nowrap; }
+.tabs { display:flex; gap:6px; width:max-content; }
+.tab { padding:6px 14px; border-radius:16px; font-size:13px; font-weight:500; cursor:pointer; border:1px solid var(--border); color:var(--text2); background:var(--card); white-space:nowrap; }
 .tab.active { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; }
-
-/* Panel */
 .panel { display:none; }
 .panel.active { display:block; }
-
-/* Card */
 .card { background:var(--card); border-radius:var(--radius); border:1px solid var(--border); overflow:hidden; }
-.gname-wrap { padding:14px 20px 12px; }
-.gname { width:100%; background:transparent; border:none; font-size:17px; font-weight:700; color:var(--text1); font-family:inherit; }
+.gname-wrap { padding:14px 16px 12px; }
+.gname { width:100%; background:transparent; border:none; font-size:16px; font-weight:700; color:var(--text1); font-family:inherit; }
 .gname:focus { outline:none; }
 .sep { height:1px; background:var(--border); }
-
-/* Add row */
-.add-row { display:flex; gap:8px; padding:10px 20px; }
-.add-inp { flex:1; background:var(--card2); border:1px solid var(--border); border-radius:var(--radius-s); padding:9px 14px; color:var(--text1); font-size:15px; font-family:inherit; }
+.add-row { display:flex; gap:8px; padding:10px 16px; }
+.add-inp { flex:1; background:var(--card2); border:1px solid var(--border); border-radius:var(--radius-s); padding:9px 12px; color:var(--text1); font-size:14px; font-family:inherit; }
 .add-inp:focus { outline:none; border-color:var(--accent); }
 .add-inp::placeholder { color:var(--text3); }
-.btn-add { padding:9px 18px; border-radius:var(--radius-s); border:none; background:var(--accent); color:#fff; font-size:15px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap; }
+.btn-add { padding:9px 16px; border-radius:var(--radius-s); border:none; background:var(--accent); color:#fff; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap; }
 .btn-add:active { opacity:.7; }
 
-/* Table */
-.tbl-head {
-  display:grid;
-  grid-template-columns:100px 160px 1fr 110px 110px 110px 40px;
-  padding:8px 20px;
-  border-top:1px solid var(--border);
-  gap:0;
-}
-.tbl-head span {
+/* 用 table 取代 grid，自動分配欄寬 */
+table { width:100%; border-collapse:collapse; }
+thead tr { border-top:1px solid var(--border); }
+thead th {
+  padding:8px 8px;
   font-size:11px; color:var(--text3);
-  font-weight:700; letter-spacing:0.06em; text-transform:uppercase;
+  font-weight:700; letter-spacing:0.05em;
+  text-transform:uppercase;
+  text-align:right;
+  white-space:nowrap;
 }
-.tbl-head span:nth-child(4),
-.tbl-head span:nth-child(5),
-.tbl-head span:nth-child(6) { text-align:right; }
+thead th:first-child { text-align:left; }
+thead th:nth-child(2) { text-align:left; }
+tbody tr { border-top:1px solid var(--border); }
+tbody tr:hover { background:rgba(255,255,255,0.02); }
+tbody td { padding:11px 8px; vertical-align:middle; white-space:nowrap; }
 
-.srow {
-  display:grid;
-  grid-template-columns:100px 160px 1fr 110px 110px 110px 40px;
-  padding:12px 20px;
-  border-top:1px solid var(--border);
-  align-items:center;
-  gap:0;
-}
-.srow:hover { background:rgba(255,255,255,0.02); }
+/* 代號欄 */
+.td-id { text-align:left; }
+.id-num { font-size:16px; font-weight:800; color:var(--text1); }
 
-/* Cells */
-.c-id { }
-.c-id-num { font-size:18px; font-weight:800; color:var(--text1); line-height:1; }
-.c-id-price { font-size:14px; color:var(--text2); margin-top:3px; font-weight:500; }
+/* 收盤價欄 */
+.td-price { text-align:left; }
+.price-val { font-size:16px; font-weight:700; color:var(--text1); }
 
-.c-sig { display:flex; align-items:center; gap:8px; }
-.c-emoji { font-size:20px; }
-.c-action { font-size:18px; font-weight:800; line-height:1; }
-.c-days { font-size:13px; color:var(--text2); margin-top:3px; }
-
-.c-spacer {}
-
-.c-ma { font-size:18px; font-weight:700; text-align:right; }
-.above { color:var(--greentxt); }
-.below { color:var(--redtxt); }
-.na    { color:var(--text3); font-size:14px; }
-
+/* 訊號欄 */
+.td-sig { text-align:left; }
+.sig-row { display:flex; align-items:center; gap:6px; white-space:nowrap; }
+.sig-emoji { font-size:16px; }
+.sig-action { font-size:15px; font-weight:700; }
+.sig-days { font-size:12px; color:var(--text2); margin-left:2px; }
 .sig-g { color:var(--green); }
 .sig-y { color:var(--yellow); }
 .sig-r { color:var(--red); }
 .sig-w { color:var(--text1); }
 
-.c-del { display:flex; justify-content:flex-end; align-items:center; }
-.btn-del { width:26px; height:26px; border-radius:50%; border:none; background:rgba(255,69,58,.15); color:var(--red); font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+/* 均線欄 */
+.td-ma { text-align:right; }
+.ma-val { font-size:16px; font-weight:700; }
+.above { color:var(--green); }
+.below { color:#ff6b6b; }
+.na    { color:var(--text3); font-size:13px; }
+
+/* 刪除欄 */
+.td-del { text-align:right; width:36px; }
+.btn-del { width:24px; height:24px; border-radius:50%; border:none; background:rgba(255,69,58,.15); color:var(--red); font-size:13px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
 .btn-del:active { background:rgba(255,69,58,.35); }
 
-.empty { padding:32px 20px; text-align:center; color:var(--text3); font-size:15px; border-top:1px solid var(--border); }
-.loading { padding:24px 20px; text-align:center; color:var(--text3); font-size:15px; border-top:1px solid var(--border); }
-.err { padding:14px 20px; color:var(--red); font-size:15px; border-top:1px solid var(--border); }
-
-.bot { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; border-top:1px solid var(--border); }
-.upd { font-size:12px; color:var(--text3); }
-.btn-scan { padding:10px 26px; border-radius:22px; border:none; background:var(--green); color:#000; font-size:15px; font-weight:800; cursor:pointer; font-family:inherit; }
+.empty { padding:28px 16px; text-align:center; color:var(--text3); font-size:14px; }
+.loading { padding:20px 16px; text-align:center; color:var(--text3); font-size:14px; }
+.err { padding:12px 16px; color:var(--red); font-size:14px; }
+.bot { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-top:1px solid var(--border); }
+.upd { font-size:11px; color:var(--text3); }
+.btn-scan { padding:10px 24px; border-radius:20px; border:none; background:var(--green); color:#000; font-size:14px; font-weight:800; cursor:pointer; font-family:inherit; }
 .btn-scan:active { opacity:.7; }
 .btn-scan:disabled { background:var(--card2); color:var(--text3); cursor:not-allowed; }
-
-/* Mobile */
-@media (max-width:600px) {
-  .wrap { padding:0 12px; }
-  .header h1 { font-size:22px; }
-  .tbl-head { grid-template-columns:60px 1fr 56px 54px 54px 28px; padding:6px 12px; }
-  .tbl-head .c-spacer-h { display:none; }
-  .srow { grid-template-columns:60px 1fr 56px 54px 54px 28px; padding:9px 12px; }
-  .srow .c-spacer { display:none; }
-  .c-id-num { font-size:15px; }
-  .c-id-price { font-size:12px; }
-  .c-emoji { font-size:16px; }
-  .c-action { font-size:14px; }
-  .c-days { font-size:11px; }
-  .c-ma { font-size:14px; }
-  .tbl-head span { font-size:9px; }
-  .gname { font-size:15px; }
-  .gname-wrap { padding:12px 12px 10px; }
-  .add-row { padding:8px 12px; }
-  .add-inp { font-size:14px; padding:8px 12px; }
-  .btn-add { font-size:14px; padding:8px 14px; }
-  .btn-scan { font-size:13px; padding:8px 20px; }
-  .bot { padding:10px 12px; }
-}
 </style>
 </head>
 <body>
@@ -355,12 +307,13 @@ function render(){
         "<input class=\\"add-inp\\" type=\\"text\\" id=\\"ai"+i+"\\" placeholder=\\"輸入代號，如 2330、6016\\" maxlength=\\"12\\" onkeydown=\\"if(event.key===&quot;Enter&quot;)addS("+i+")\\">"+
         "<button class=\\"btn-add\\" onclick=\\"addS("+i+")\\">新增</button>"+
       "</div>"+
-      "<div class=\\"tbl-head\\">"+
-        "<span>代號</span><span>訊號／天數</span><span class=\\"c-spacer-h\\"></span>"+
-        "<span>60MA240</span><span>MA5</span><span>MA10</span>"+
-        "<span></span>"+
-      "</div>"+
-      "<div class=\\"stock-list\\" id=\\"sl"+i+"\\">"+renderRows(g.stocks,i)+"</div>"+
+      "<table>"+
+        "<thead><tr>"+
+          "<th>代號</th><th>收盤價</th><th>訊號／天數</th>"+
+          "<th>60MA240</th><th>MA5</th><th>MA10</th><th></th>"+
+        "</tr></thead>"+
+        "<tbody id=\\"sl"+i+"\\">"+renderRows(g.stocks,i)+"</tbody>"+
+      "</table>"+
       "<div class=\\"bot\\">"+
         "<span class=\\"upd\\" id=\\"ut"+i+"\\"></span>"+
         "<button class=\\"btn-scan\\" id=\\"sb"+i+"\\" onclick=\\"scan("+i+")\\">掃描訊號</button>"+
@@ -375,30 +328,29 @@ function maClass(price,ma){
 }
 function maVal(ma){ return ma!=null?ma:"—"; }
 function renderRows(stocks,gi){
-  if(!stocks||stocks.length===0) return "<div class=\\"empty\\">尚未新增股票</div>";
+  if(!stocks||stocks.length===0)
+    return "<tr><td colspan=\\"7\\"><div class=\\"empty\\">尚未新增股票</div></td></tr>";
   return stocks.map(function(s,si){
     var sig=s.signal||"⬜", act=s.action||"—";
-    var price=s.price!=null?s.price:null;
-    var days=s.hold_days>0?s.hold_days+"天":"";
+    var price=s.price!=null?s.price:"—";
+    var days=s.hold_days>0?" "+s.hold_days+"天":"";
     var cls=sig==="🟢"?"sig-g":sig==="🟡"?"sig-y":sig==="🔴"?"sig-r":"sig-w";
-    return "<div class=\\"srow\\">"+
-      "<div class=\\"c-id\\">"+
-        "<div class=\\"c-id-num\\">"+esc(s.id)+"</div>"+
-        "<div class=\\"c-id-price\\">"+(price!=null?price:"—")+"</div>"+
-      "</div>"+
-      "<div class=\\"c-sig\\">"+
-        "<span class=\\"c-emoji\\">"+sig+"</span>"+
-        "<div>"+
-          "<div class=\\"c-action "+cls+"\\">"+act+"</div>"+
-          (days?"<div class=\\"c-days\\">"+days+"</div>":"")+
-        "</div>"+
-      "</div>"+
-      "<div class=\\"c-spacer\\"></div>"+
-      "<div class=\\"c-ma "+maClass(price,s.ma60_240)+"\\">"+maVal(s.ma60_240)+"</div>"+
-      "<div class=\\"c-ma "+maClass(price,s.ma5)+"\\">"+maVal(s.ma5)+"</div>"+
-      "<div class=\\"c-ma "+maClass(price,s.ma10)+"\\">"+maVal(s.ma10)+"</div>"+
-      "<div class=\\"c-del\\"><button class=\\"btn-del\\" onclick=\\"delS("+gi+","+si+")\\">&#xd7;</button></div>"+
-      "</div>";
+    var m240c=maClass(s.price,s.ma60_240);
+    var m5c=maClass(s.price,s.ma5);
+    var m10c=maClass(s.price,s.ma10);
+    return "<tr>"+
+      "<td class=\\"td-id\\"><span class=\\"id-num\\">"+esc(s.id)+"</span></td>"+
+      "<td class=\\"td-price\\"><span class=\\"price-val\\">"+price+"</span></td>"+
+      "<td class=\\"td-sig\\"><div class=\\"sig-row\\">"+
+        "<span class=\\"sig-emoji\\">"+sig+"</span>"+
+        "<span class=\\"sig-action "+cls+"\\">"+act+"</span>"+
+        "<span class=\\"sig-days\\">"+days+"</span>"+
+      "</div></td>"+
+      "<td class=\\"td-ma\\"><span class=\\"ma-val "+m240c+"\\">"+maVal(s.ma60_240)+"</span></td>"+
+      "<td class=\\"td-ma\\"><span class=\\"ma-val "+m5c+"\\">"+maVal(s.ma5)+"</span></td>"+
+      "<td class=\\"td-ma\\"><span class=\\"ma-val "+m10c+"\\">"+maVal(s.ma10)+"</span></td>"+
+      "<td class=\\"td-del\\"><button class=\\"btn-del\\" onclick=\\"delS("+gi+","+si+")\\">&#xd7;</button></td>"+
+      "</tr>";
   }).join("");
 }
 function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
@@ -417,7 +369,7 @@ function scan(i){
   var ids=stocks.map(function(s){return s.id;}).join(",");
   var btn=document.getElementById("sb"+i);
   btn.disabled=true; btn.textContent="查詢中...";
-  document.getElementById("sl"+i).innerHTML="<div class=\\"loading\\">查詢中，請稍候...</div>";
+  document.getElementById("sl"+i).innerHTML="<tr><td colspan=\\"7\\"><div class=\\"loading\\">查詢中，請稍候...</div></td></tr>";
   fetch("/api/batch?ids="+encodeURIComponent(ids))
     .then(function(r){return r.json();})
     .then(function(data){
@@ -432,7 +384,7 @@ function scan(i){
       btn.disabled=false; btn.innerHTML="掃描訊號";
     })
     .catch(function(){
-      document.getElementById("sl"+i).innerHTML="<div class=\\"err\\">連線失敗，請稍後再試</div>";
+      document.getElementById("sl"+i).innerHTML="<tr><td colspan=\\"7\\"><div class=\\"err\\">連線失敗，請稍後再試</div></td></tr>";
       btn.disabled=false; btn.innerHTML="掃描訊號";
     });
 }

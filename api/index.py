@@ -124,6 +124,8 @@ def batch_check():
 # ────────────────────────────────────────────
 #  前端 HTML
 # ────────────────────────────────────────────
+GAS_URL = "https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec"
+
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -320,7 +322,11 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--sans)
 <div class="header">
   <div class="header-top">
     <div class="logo">GA<span>.</span>STOCK</div>
-    <button class="hist-btn" id="histToggle" onclick="toggleHist()">📋 歷史紀錄</button>
+    <div style="display:flex;gap:6px">
+      <button class="hist-btn" id="cloudLoadBtn" onclick="loadCloud()">⬇️ 載雲端</button>
+      <button class="hist-btn" id="cloudSaveBtn" onclick="saveCloud()">☁️ 存雲端</button>
+      <button class="hist-btn" id="histToggle" onclick="toggleHist()">📋 歷史</button>
+    </div>
   </div>
   <div class="tabs-wrap" id="tabsWrap"></div>
 </div>
@@ -571,8 +577,90 @@ function clearHistory() {
   renderHistPanel();
 }
 
+// ── 雲端同步（Google Sheet）────────────────────────────
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec';
+
+async function saveCloud() {
+  const btn = document.getElementById('cloudSaveBtn');
+  btn.textContent = '☁️ 儲存中…'; btn.disabled = true;
+  // 把群組資料轉成二維陣列存入 Sheet
+  // 格式：每列 = [群組index, 群組名稱, 股票代號]
+  const rows = [];
+  groups.forEach((g, gi) => {
+    if (g.stocks && g.stocks.length > 0) {
+      g.stocks.forEach(s => rows.push([gi, g.name, s.id]));
+    } else {
+      rows.push([gi, g.name, '']);
+    }
+  });
+  try {
+    const url = GAS_URL + '?action=save&payload=' + encodeURIComponent(JSON.stringify(rows));
+    await fetch(url, { mode: 'no-cors' });
+    btn.textContent = '✅ 已儲存';
+    setTimeout(() => { btn.textContent = '☁️ 存雲端'; btn.disabled = false; }, 2000);
+  } catch(e) {
+    btn.textContent = '❌ 失敗'; btn.disabled = false;
+    setTimeout(() => { btn.textContent = '☁️ 存雲端'; }, 2000);
+  }
+}
+
+async function loadCloud() {
+  const btn = document.getElementById('cloudLoadBtn');
+  btn.textContent = '⬇️ 載入中…'; btn.disabled = true;
+  try {
+    const url = GAS_URL + '?action=load';
+    const res  = await fetch(url);
+    const json = await res.json();
+    const rows = json.data || [];
+    if (rows.length === 0) { alert('雲端無資料'); btn.textContent = '⬇️ 載雲端'; btn.disabled = false; return; }
+
+    // 重建群組（保留5個群組結構）
+    const newGroups = DEFAULT_GROUPS.map((n, i) => ({ name: n, stocks: [] }));
+    rows.forEach(row => {
+      const gi   = parseInt(row[0]);
+      const name = row[1] || DEFAULT_GROUPS[gi];
+      const sid  = (row[2] || '').trim().toUpperCase();
+      if (gi >= 0 && gi < 5) {
+        newGroups[gi].name = name;
+        if (sid && !newGroups[gi].stocks.find(s => s.id === sid)) {
+          newGroups[gi].stocks.push({ id: sid });
+        }
+      }
+    });
+    groups = newGroups;
+    saveGroups();
+    render();
+    btn.textContent = '✅ 已載入';
+    setTimeout(() => { btn.textContent = '⬇️ 載雲端'; btn.disabled = false; }, 2000);
+    // 載入後自動掃描目前群組
+    autoScanAll();
+  } catch(e) {
+    btn.textContent = '❌ 失敗'; btn.disabled = false;
+    setTimeout(() => { btn.textContent = '⬇️ 載雲端'; }, 2000);
+  }
+}
+
+// ── 自動掃描（開啟頁面時執行）────────────────────────
+async function autoScanAll() {
+  for (let i = 0; i < groups.length; i++) {
+    if (groups[i].stocks && groups[i].stocks.length > 0) {
+      curGroup = i;
+      render();
+      await scanGroup(i);
+    }
+  }
+  // 掃描完回到第一個有股票的群組
+  curGroup = groups.findIndex(g => g.stocks && g.stocks.length > 0);
+  if (curGroup < 0) curGroup = 0;
+  render();
+}
+
 // ── 啟動 ──────────────────────────────────────────────
 render();
+// 開啟頁面：先從雲端載入，再自動掃描
+window.addEventListener('load', () => {
+  loadCloud();
+});
 </script>
 </body>
 </html>"""

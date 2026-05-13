@@ -137,6 +137,33 @@ def batch_check():
     return jsonify(result)
 
 
+import requests as http_requests
+import json as _json
+
+GAS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec"
+
+@app.route('/api/sync-load', methods=['GET'])
+def sync_load():
+    try:
+        r = http_requests.get(GAS_ENDPOINT, params={'action': 'load'}, timeout=15)
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sync-save', methods=['POST'])
+def sync_save():
+    try:
+        payload = request.json.get('payload', [])
+        r = http_requests.get(GAS_ENDPOINT, params={
+            'action': 'save',
+            'payload': _json.dumps(payload)
+        }, timeout=15)
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # ────────────────────────────────────────────
 #  前端 HTML
 # ────────────────────────────────────────────
@@ -596,27 +623,6 @@ function clearHistory() {
 // ── 雲端同步（Google Sheet，JSONP 解決跨域）──────────────
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec';
 
-function gasJsonp(url) {
-  return new Promise((resolve, reject) => {
-    const cbName = '_gas_cb_' + Date.now();
-    const script = document.createElement('script');
-    const timer  = setTimeout(() => {
-      delete window[cbName];
-      document.body.removeChild(script);
-      reject(new Error('timeout'));
-    }, 15000);
-    window[cbName] = (data) => {
-      clearTimeout(timer);
-      delete window[cbName];
-      document.body.removeChild(script);
-      resolve(data);
-    };
-    script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cbName;
-    script.onerror = () => { clearTimeout(timer); reject(new Error('script error')); };
-    document.body.appendChild(script);
-  });
-}
-
 async function saveCloud() {
   const btn = document.getElementById('cloudSaveBtn');
   btn.textContent = '☁️ 儲存中…'; btn.disabled = true;
@@ -629,9 +635,17 @@ async function saveCloud() {
     }
   });
   try {
-    const url = GAS_URL + '?action=save&payload=' + encodeURIComponent(JSON.stringify(rows));
-    await gasJsonp(url);
-    btn.textContent = '✅ 已儲存';
+    const res = await fetch('/api/sync-save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payload: rows })
+    });
+    const json = await res.json();
+    if (json.ok) {
+      btn.textContent = '✅ 已儲存';
+    } else {
+      btn.textContent = '❌ 失敗';
+    }
     setTimeout(() => { btn.textContent = '☁️ 存雲端'; btn.disabled = false; }, 2000);
   } catch(e) {
     btn.textContent = '❌ 失敗'; btn.disabled = false;
@@ -643,8 +657,8 @@ async function loadCloud() {
   const btn = document.getElementById('cloudLoadBtn');
   btn.textContent = '⬇️ 載入中…'; btn.disabled = true;
   try {
-    const url  = GAS_URL + '?action=load';
-    const json = await gasJsonp(url);
+    const res  = await fetch('/api/sync-load');
+    const json = await res.json();
     const rows = json.data || [];
     if (rows.length === 0) {
       alert('雲端無資料');

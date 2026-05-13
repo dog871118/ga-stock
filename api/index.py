@@ -53,9 +53,25 @@ def calc_signal(close_series):
     return signal, action, hold_days
 
 
+def resolve_ticker(stock_id):
+    """自動判斷上市(.TW)或上櫃(.TWO)，回傳正確 ticker"""
+    if stock_id.endswith(".TW") or stock_id.endswith(".TWO"):
+        return stock_id
+    # 先試上市
+    t = stock_id + ".TW"
+    try:
+        df = yf.download(t, period="5d", auto_adjust=True, progress=False)
+        if not df.empty and len(df) >= 1:
+            return t
+    except:
+        pass
+    # 再試上櫃
+    return stock_id + ".TWO"
+
+
 def get_signals(stock_id):
     try:
-        ticker = stock_id if stock_id.endswith(".TWO") else stock_id + ".TW"
+        ticker = resolve_ticker(stock_id)
 
         # 日線
         df_d = yf.download(ticker, period="40d", auto_adjust=True, progress=False)

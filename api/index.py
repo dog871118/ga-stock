@@ -67,11 +67,9 @@ def get_signal_20d(stock_id):
                 signal, action = '⬜', '空手'
             hold_days = 0
 
-        # MA5, MA10（日線）
-        ma5  = round(float(close.iloc[-5:].mean()), 2)  if len(close) >= 5  else None
-        ma10 = round(float(close.iloc[-10:].mean()), 2) if len(close) >= 10 else None
+        ma5  = round(float(close.iloc[-5:].mean()), 1)  if len(close) >= 5  else None
+        ma10 = round(float(close.iloc[-10:].mean()), 1) if len(close) >= 10 else None
 
-        # 60分K 240均價
         ma60_240 = None
         try:
             df60 = fetch_df(stock_id, period="60d", interval="60m")
@@ -81,16 +79,16 @@ def get_signal_20d(stock_id):
                 else:
                     c60 = df60['Close'].dropna()
                 if len(c60) >= 240:
-                    ma60_240 = round(float(c60.iloc[-240:].mean()), 2)
+                    ma60_240 = round(float(c60.iloc[-240:].mean()), 1)
                 else:
-                    ma60_240 = round(float(c60.mean()), 2)
+                    ma60_240 = round(float(c60.mean()), 1)
         except:
             ma60_240 = None
 
         return {
             'signal':    signal,
             'action':    action,
-            'price':     round(price, 2),
+            'price':     round(price, 1),
             'hold_days': hold_days,
             'ma5':       ma5,
             'ma10':      ma10,
@@ -147,63 +145,61 @@ HTML_PAGE = """<!DOCTYPE html>
 }
 * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
 body { font-family:-apple-system,"Helvetica Neue",sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; padding-bottom:40px; }
-.header { padding:52px 20px 16px; }
-.header-sub { font-size:11px; color:var(--text2); letter-spacing:0.08em; text-transform:uppercase; margin-bottom:6px; }
-.header h1 { font-size:26px; font-weight:700; color:var(--text1); letter-spacing:-0.04em; }
-.sync-bar { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:0 16px 14px; flex-wrap:wrap; }
-.btn-sync { padding:5px 12px; border-radius:14px; border:1px solid var(--border); background:transparent; color:var(--text2); font-size:12px; font-weight:500; cursor:pointer; font-family:inherit; }
+.header { padding:44px 16px 12px; }
+.header-sub { font-size:10px; color:var(--text2); letter-spacing:0.08em; text-transform:uppercase; margin-bottom:4px; }
+.header h1 { font-size:22px; font-weight:700; color:var(--text1); letter-spacing:-0.03em; }
+.sync-bar { display:flex; align-items:center; justify-content:flex-end; gap:6px; padding:0 16px 10px; flex-wrap:wrap; }
+.btn-sync { padding:4px 10px; border-radius:12px; border:1px solid var(--border); background:transparent; color:var(--text2); font-size:11px; font-weight:500; cursor:pointer; font-family:inherit; }
 .btn-sync:active { opacity:.7; }
-.sync-st { font-size:11px; color:var(--text3); }
-.tabs-wrap { padding:0 16px; margin-bottom:14px; overflow-x:auto; scrollbar-width:none; }
+.sync-st { font-size:10px; color:var(--text3); }
+.tabs-wrap { padding:0 16px; margin-bottom:10px; overflow-x:auto; scrollbar-width:none; }
 .tabs-wrap::-webkit-scrollbar { display:none; }
 .tabs { display:flex; gap:6px; width:max-content; }
-.tab { padding:6px 14px; border-radius:20px; font-size:13px; font-weight:500; cursor:pointer; border:1px solid var(--border); color:var(--text2); background:var(--card); white-space:nowrap; transition:all .2s; }
+.tab { padding:5px 12px; border-radius:16px; font-size:12px; font-weight:500; cursor:pointer; border:1px solid var(--border); color:var(--text2); background:var(--card); white-space:nowrap; transition:all .2s; }
 .tab.active { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
 .panel { display:none; padding:0 16px; }
 .panel.active { display:block; }
 .card { background:var(--card); border-radius:var(--radius); border:1px solid var(--border); overflow:hidden; }
-.gname-wrap { padding:14px 16px 12px; }
-.gname { width:100%; background:transparent; border:none; font-size:16px; font-weight:700; color:var(--text1); font-family:inherit; letter-spacing:-0.02em; }
+.gname-wrap { padding:12px 14px 10px; }
+.gname { width:100%; background:transparent; border:none; font-size:15px; font-weight:700; color:var(--text1); font-family:inherit; }
 .gname:focus { outline:none; }
 .sep { height:1px; background:var(--border); }
-.add-row { display:flex; gap:8px; padding:10px 16px; }
-.add-inp { flex:1; background:var(--card2); border:1px solid var(--border); border-radius:var(--radius-s); padding:9px 13px; color:var(--text1); font-size:14px; font-family:inherit; }
+.add-row { display:flex; gap:6px; padding:8px 14px; }
+.add-inp { flex:1; background:var(--card2); border:1px solid var(--border); border-radius:var(--radius-s); padding:8px 12px; color:var(--text1); font-size:13px; font-family:inherit; }
 .add-inp:focus { outline:none; border-color:var(--accent); }
 .add-inp::placeholder { color:var(--text3); }
-.btn-add { padding:9px 16px; border-radius:var(--radius-s); border:none; background:var(--accent); color:#fff; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; white-space:nowrap; }
+.btn-add { padding:8px 14px; border-radius:var(--radius-s); border:none; background:var(--accent); color:#fff; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; white-space:nowrap; }
 .btn-add:active { opacity:.7; }
-.tbl-head { display:grid; grid-template-columns:62px 1fr 56px 56px 56px 26px; gap:4px; padding:7px 16px; border-top:1px solid var(--border); }
-.tbl-head span { font-size:10px; color:var(--text3); font-weight:600; letter-spacing:0.05em; text-transform:uppercase; }
+.tbl-head { display:grid; grid-template-columns:50px 1fr 52px 50px 50px 22px; gap:3px; padding:6px 14px; border-top:1px solid var(--border); }
+.tbl-head span { font-size:9px; color:var(--text3); font-weight:600; letter-spacing:0.04em; text-transform:uppercase; overflow:hidden; }
 .tbl-head span:nth-child(3),
 .tbl-head span:nth-child(4),
 .tbl-head span:nth-child(5) { text-align:right; }
-.srow { display:grid; grid-template-columns:62px 1fr 56px 56px 56px 26px; gap:4px; align-items:center; padding:11px 16px; border-top:1px solid var(--border); }
+.srow { display:grid; grid-template-columns:50px 1fr 52px 50px 50px 22px; gap:3px; align-items:center; padding:8px 14px; border-top:1px solid var(--border); }
 .srow:active { background:rgba(255,255,255,0.02); }
-.c-id { }
-.c-id-main { font-size:14px; font-weight:700; color:var(--text1); line-height:1.2; }
-.c-id-price { font-size:11px; color:var(--text2); margin-top:1px; }
-.c-sig { display:flex; align-items:center; gap:6px; }
-.c-sig-emoji { font-size:16px; flex-shrink:0; }
-.c-sig-txt { }
-.c-sig-action { font-size:13px; font-weight:600; line-height:1.2; }
-.c-sig-days { font-size:11px; color:var(--text2); margin-top:1px; }
+.c-id-main { font-size:13px; font-weight:700; color:var(--text1); line-height:1.2; }
+.c-id-price { font-size:10px; color:var(--text2); margin-top:1px; }
+.c-sig { display:flex; align-items:center; gap:5px; }
+.c-sig-emoji { font-size:14px; flex-shrink:0; }
+.c-sig-action { font-size:12px; font-weight:600; line-height:1.2; }
+.c-sig-days { font-size:10px; color:var(--text2); margin-top:1px; }
 .sig-g { color:var(--green); }
 .sig-y { color:var(--yellow); }
 .sig-r { color:var(--red); }
 .sig-w { color:var(--white); }
-.c-ma { font-size:12px; font-weight:500; text-align:right; }
+.c-ma { font-size:11px; font-weight:500; text-align:right; overflow:hidden; }
 .above { color:var(--greentxt); }
 .below { color:var(--redtxt); }
 .na    { color:var(--text3); }
 .c-del { display:flex; justify-content:flex-end; }
-.btn-del { width:22px; height:22px; border-radius:50%; border:none; background:rgba(255,69,58,.12); color:var(--red); font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.btn-del { width:20px; height:20px; border-radius:50%; border:none; background:rgba(255,69,58,.12); color:var(--red); font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
 .btn-del:active { background:rgba(255,69,58,.3); }
-.empty { padding:28px 16px; text-align:center; color:var(--text3); font-size:13px; border-top:1px solid var(--border); }
-.loading { padding:20px 16px; text-align:center; color:var(--text3); font-size:13px; border-top:1px solid var(--border); }
-.err { padding:12px 16px; color:var(--red); font-size:13px; border-top:1px solid var(--border); }
-.bot { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-top:1px solid var(--border); }
-.upd { font-size:11px; color:var(--text3); }
-.btn-scan { padding:9px 22px; border-radius:20px; border:none; background:var(--green); color:#000; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit; }
+.empty { padding:24px 14px; text-align:center; color:var(--text3); font-size:12px; border-top:1px solid var(--border); }
+.loading { padding:18px 14px; text-align:center; color:var(--text3); font-size:12px; border-top:1px solid var(--border); }
+.err { padding:10px 14px; color:var(--red); font-size:12px; border-top:1px solid var(--border); }
+.bot { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-top:1px solid var(--border); }
+.upd { font-size:10px; color:var(--text3); }
+.btn-scan { padding:8px 20px; border-radius:18px; border:none; background:var(--green); color:#000; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
 .btn-scan:active { opacity:.7; }
 .btn-scan:disabled { background:var(--card2); color:var(--text3); cursor:not-allowed; }
 </style>
@@ -301,13 +297,11 @@ function render(){
     pe.appendChild(p);
   });
 }
-function maClass(price, ma){
-  if(ma==null) return "na";
+function maClass(price,ma){
+  if(ma==null||price==null) return "na";
   return price>=ma?"above":"below";
 }
-function maVal(ma){
-  return ma!=null?ma:"—";
-}
+function maVal(ma){ return ma!=null?ma:"—"; }
 function renderRows(stocks,gi){
   if(!stocks||stocks.length===0) return "<div class=\\"empty\\">尚未新增股票</div>";
   return stocks.map(function(s,si){
@@ -315,24 +309,21 @@ function renderRows(stocks,gi){
     var price=s.price!=null?s.price:null;
     var days=s.hold_days>0?s.hold_days+"天":"";
     var cls=sig==="🟢"?"sig-g":sig==="🟡"?"sig-y":sig==="🔴"?"sig-r":"sig-w";
-    var m240cls=maClass(price,s.ma60_240);
-    var m5cls=maClass(price,s.ma5);
-    var m10cls=maClass(price,s.ma10);
     return "<div class=\\"srow\\">"+
-      "<div class=\\"c-id\\">"+
+      "<div>"+
         "<div class=\\"c-id-main\\">"+esc(s.id)+"</div>"+
         "<div class=\\"c-id-price\\">"+(price!=null?price:"—")+"</div>"+
       "</div>"+
       "<div class=\\"c-sig\\">"+
         "<span class=\\"c-sig-emoji\\">"+sig+"</span>"+
-        "<div class=\\"c-sig-txt\\">"+
+        "<div>"+
           "<div class=\\"c-sig-action "+cls+"\\">"+act+"</div>"+
           (days?"<div class=\\"c-sig-days\\">"+days+"</div>":"")+
         "</div>"+
       "</div>"+
-      "<span class=\\"c-ma "+m240cls+"\\">"+maVal(s.ma60_240)+"</span>"+
-      "<span class=\\"c-ma "+m5cls+"\\">"+maVal(s.ma5)+"</span>"+
-      "<span class=\\"c-ma "+m10cls+"\\">"+maVal(s.ma10)+"</span>"+
+      "<span class=\\"c-ma "+maClass(price,s.ma60_240)+"\\">"+maVal(s.ma60_240)+"</span>"+
+      "<span class=\\"c-ma "+maClass(price,s.ma5)+"\\">"+maVal(s.ma5)+"</span>"+
+      "<span class=\\"c-ma "+maClass(price,s.ma10)+"\\">"+maVal(s.ma10)+"</span>"+
       "<div class=\\"c-del\\"><button class=\\"btn-del\\" onclick=\\"delS("+gi+","+si+")\\">&#xd7;</button></div>"+
       "</div>";
   }).join("");

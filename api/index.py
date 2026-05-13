@@ -657,7 +657,7 @@ async function loadCloud() {
   const btn = document.getElementById('cloudLoadBtn');
   btn.textContent = '⬇️ 載入中…'; btn.disabled = true;
   try {
-    const res  = await fetch('/api/sync-load');
+    const res  = await fetch('/api/sync-load', { signal: AbortSignal.timeout(20000) });
     const json = await res.json();
     const rows = json.data || [];
     if (rows.length === 0) {
@@ -705,9 +705,9 @@ async function autoScanAll() {
 
 // ── 啟動 ──────────────────────────────────────────────
 render();
-// 開啟頁面：先從雲端載入，再自動掃描
+// 開啟頁面：延遲2秒後從雲端載入（等伺服器冷啟動完成）
 window.addEventListener('load', () => {
-  loadCloud();
+  setTimeout(() => { loadCloud(); }, 2000);
 });
 </script>
 </body>

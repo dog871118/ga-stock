@@ -8,75 +8,50 @@ CORS(app)
 
 def calc_signal(close_series):
     if len(close_series) < 5:
-        return '⬜', '空手', 0
-    status  = 'watching'
-    buy_day = None
+        return '', '空手', 0
+
+    status   = 'watching'
+    buy_day  = None
+    sell_day = None
+
     for i in range(2, len(close_series)):
         price      = float(close_series.iloc[i])
         prev2_high = float(close_series.iloc[i-2:i].max())
         prev2_low  = float(close_series.iloc[i-2:i].min())
         if status == 'watching':
             if price > prev2_high:
-                status  = 'holding'
-                buy_day = i
+                status   = 'holding'
+                buy_day  = i
+                sell_day = None
         else:
             if price < prev2_low:
-                status  = 'watching'
-                buy_day = None
+                status   = 'watching'
+                sell_day = i
+                buy_day  = None
+
+    n          = len(close_series)
     price      = float(close_series.iloc[-1])
     prev2_high = float(close_series.iloc[-3:-1].max())
     prev2_low  = float(close_series.iloc[-3:-1].min())
 
-    # 前天是否觸發賣出（yest_sell = 昨天已是賣出狀態，今天收盤後才空手）
-    day2_sell = False
-    day2_buy  = False
-    yest_sell = False
-    yest_buy  = False
-    if len(close_series) >= 4:
-        yest_price     = float(close_series.iloc[-2])
-        yest_prev_low  = float(close_series.iloc[-4:-2].min())
-        yest_prev_high = float(close_series.iloc[-4:-2].max())
-        yest_sell      = (yest_price < yest_prev_low)
-        yest_buy       = (yest_price > yest_prev_high)
-    if len(close_series) >= 5:
-        day2_price     = float(close_series.iloc[-3])
-        day2_prev_low  = float(close_series.iloc[-5:-3].min())
-        day2_prev_high = float(close_series.iloc[-5:-3].max())
-        day2_sell      = (day2_price < day2_prev_low)
-        day2_buy       = (day2_price > day2_prev_high)
-
     if status == 'holding':
         if price < prev2_low:
-            # 今天跌破 → 賣出
             signal, action = '', '賣出'
-        elif yest_sell:
-            # 昨天跌破 → 還是賣出（今天開盤賣，收盤後才空手）
-            signal, action = '', '賣出'
-        elif day2_sell:
-            # 前天跌破，昨天已執行賣出 → 今天空手
-            signal, action = '', '空手'
-        elif buy_day == len(close_series) - 1:
-            # 今天突破 → 買進
+        elif buy_day == n - 1:
             signal, action = '', '買進'
-        elif yest_buy:
-            # 昨天突破買進 → 今天持有
-            signal, action = '', '持有'
         else:
             signal, action = '', '持有'
-        hold_days = (len(close_series) - 1) - buy_day if buy_day is not None else 0
+        hold_days = (n - 1) - buy_day if buy_day is not None else 0
     else:
-        if price > prev2_high:
-            # 今天突破 → 買進
-            signal, action = '', '買進'
-        elif yest_buy:
-            # 昨天突破，今天開盤買 → 今天收盤持有（由holding狀態處理）
+        if sell_day == n - 1:
+            signal, action = '', '賣出'
+        elif price > prev2_high:
             signal, action = '', '買進'
         else:
             signal, action = '', '空手'
         hold_days = 0
+
     return signal, action, hold_days
-
-
 def resolve_ticker(stock_id):
     if stock_id.endswith(".TW") or stock_id.endswith(".TWO"):
         return stock_id

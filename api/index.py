@@ -26,16 +26,36 @@ def calc_signal(close_series):
     price      = float(close_series.iloc[-1])
     prev2_high = float(close_series.iloc[-3:-1].max())
     prev2_low  = float(close_series.iloc[-3:-1].min())
+
+    # 昨天是否已觸發賣出
+    yest_sell = False
+    yest_buy  = False
+    if len(close_series) >= 4:
+        yest_price     = float(close_series.iloc[-2])
+        yest_prev_low  = float(close_series.iloc[-4:-2].min())
+        yest_prev_high = float(close_series.iloc[-4:-2].max())
+        yest_sell      = (yest_price < yest_prev_low)
+        yest_buy       = (yest_price > yest_prev_high)
+
     if status == 'holding':
         if price < prev2_low:
+            # 今天跌破 → 賣出（明天開盤賣）
             signal, action = '', '賣出'
+        elif yest_sell:
+            # 昨天賣出 → 今天空手
+            signal, action = '', '空手'
+        elif yest_buy:
+            # 昨天突破買進 → 今天持有
+            signal, action = '', '持有'
         elif buy_day == len(close_series) - 1:
+            # 今天剛突破 → 買進（明天開盤買）
             signal, action = '', '買進'
         else:
             signal, action = '', '持有'
         hold_days = (len(close_series) - 1) - buy_day if buy_day is not None else 0
     else:
         if price > prev2_high:
+            # 今天突破 → 買進（明天開盤買）
             signal, action = '', '買進'
         else:
             signal, action = '', '空手'
@@ -290,7 +310,7 @@ html, body {
 }
 .sig-lbl  { font-size: 12px; color: #7aa8d0; width: 16px; flex-shrink: 0; font-weight: 600; }
 .sig-txt  { font-size: 15px; font-weight: 700; }
-.sig-days { font-size: 11px; color: #7aa8d0; }
+.sig-days { font-size: 11px; color: #ff9f0a; font-weight: 600; }
 .ma-row {
   display: flex; gap: 10px;
 }
@@ -646,3 +666,4 @@ def home():
 
 if __name__ == '__main__':
     app.run()
+    

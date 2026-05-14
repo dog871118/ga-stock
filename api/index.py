@@ -28,17 +28,17 @@ def calc_signal(close_series):
     prev2_low  = float(close_series.iloc[-3:-1].min())
     if status == 'holding':
         if price < prev2_low:
-            signal, action = '🔴', '賣出'
+            signal, action = '', '賣出'
         elif buy_day == len(close_series) - 1:
-            signal, action = '🟢', '買進'
+            signal, action = '', '買進'
         else:
-            signal, action = '🟡', '持有'
+            signal, action = '', '持有'
         hold_days = (len(close_series) - 1) - buy_day if buy_day is not None else 0
     else:
         if price > prev2_high:
-            signal, action = '🟢', '買進'
+            signal, action = '', '買進'
         else:
-            signal, action = '⬜', '空手'
+            signal, action = '', '空手'
         hold_days = 0
     return signal, action, hold_days
 
@@ -252,74 +252,67 @@ html, body {
 /* ── 表頭 ── */
 .tbl-hdr {
   display: flex; align-items: center;
-  padding: 4px 14px 4px;
+  padding: 4px 14px;
   border-bottom: 1px solid #1e3a5f;
   margin-bottom: 2px;
 }
-.tbl-hdr span {
-  font-size: 11px; color: #2d5480; font-weight: 500;
-}
-.col-id    { width: 54px; }
-.col-price { width: 58px; text-align: right; }
+.tbl-hdr span { font-size: 11px; color: #7aa8d0; }
+.col-id    { width: 52px; }
+.col-price { width: 56px; text-align: right; }
 .col-sig   { flex: 1; padding-left: 10px; }
-.col-ma    { width: 62px; text-align: right; }
-.col-del   { width: 28px; }
+.col-mas   { width: 150px; display: flex; justify-content: flex-end; gap: 0; }
+.col-del   { width: 24px; }
 
 /* ── 股票列 ── */
 .row {
   display: flex; align-items: center;
-  padding: 10px 14px;
+  padding: 11px 14px;
   border-bottom: 1px solid #132338;
 }
 .row:active { background: #132338; }
 
 .r-id {
-  width: 54px;
-  font-size: 15px; font-weight: 700; color: #38bdf8;
+  width: 52px;
+  font-size: 16px; font-weight: 700; color: #38bdf8;
   font-variant-numeric: tabular-nums;
 }
 .r-price {
-  width: 58px; text-align: right;
+  width: 56px; text-align: right;
   font-size: 16px; font-weight: 600; color: #e2e8f0;
   font-variant-numeric: tabular-nums;
 }
-.r-sigs {
+.r-mid {
   flex: 1; padding-left: 10px;
-  display: flex; flex-direction: column; gap: 3px;
+  display: flex; flex-direction: column; gap: 4px;
 }
 .sig-line {
   display: flex; align-items: baseline; gap: 5px;
-  font-size: 14px; font-weight: 600;
 }
-.sig-lbl { font-size: 11px; color: #2d5480; width: 16px; }
-.sig-txt  { font-size: 14px; font-weight: 700; }
-.sig-days { font-size: 11px; color: #4a6fa5; font-weight: 400; }
+.sig-lbl  { font-size: 12px; color: #7aa8d0; width: 16px; flex-shrink: 0; font-weight: 600; }
+.sig-txt  { font-size: 15px; font-weight: 700; }
+.sig-days { font-size: 11px; color: #7aa8d0; }
+.ma-row {
+  display: flex; gap: 10px;
+}
+.ma-item { display: flex; flex-direction: column; align-items: flex-start; }
+.ma-val  { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ma-lbl  { font-size: 10px; color: #7aa8d0; }
 .c-buy  { color: #34c759; }
 .c-hold { color: #ffd60a; }
 .c-sell { color: #ff453a; }
-.c-idle { color: #4a6fa5; }
-
-.r-ma {
-  width: 62px; text-align: right;
-  font-size: 13px; font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.6;
-}
-.ma-up   { color: #34c759; }
-.ma-dn   { color: #ff453a; }
-.ma-na   { color: #2d5480; }
-.ma-lbl  { font-size: 10px; color: #2d5480; display: block; }
+.c-idle { color: #94a3b8; }
+.ma-up  { color: #34c759; }
+.ma-dn  { color: #ff453a; }
+.ma-na  { color: #2d5480; }
 
 .r-del {
-  width: 28px; text-align: right;
+  width: 24px; text-align: right;
   background: none; border: none;
-  color: #2d5480; font-size: 16px; cursor: pointer; padding: 4px;
+  color: #2d5480; font-size: 16px; cursor: pointer; padding: 2px;
+  align-self: flex-start; margin-top: 2px;
 }
 .r-del:active { color: #ff453a; }
-
-/* pending row */
-.row-pending .r-price,
-.row-pending .r-sigs { color: #2d5480; }
+.row-pending .r-price { color: #2d5480; }
 
 /* empty */
 .empty {
@@ -453,10 +446,7 @@ function render(){
     h+=`<div class="tbl-hdr">
       <span class="col-id">代號</span>
       <span class="col-price">收盤價</span>
-      <span class="col-sig">訊號／天數</span>
-      <span class="col-ma">60MA240</span>
-      <span class="col-ma">MA5</span>
-      <span class="col-ma">MA10</span>
+      <span class="col-sig">訊號／均線</span>
       <span class="col-del"></span>
     </div>`;
     h+=g.stocks.map((s,si)=>rc(s,cur,si)).join('');
@@ -469,37 +459,36 @@ function rc(s,gi,si){
     return `<div class="row row-pending">
       <span class="r-id">${s.id}</span>
       <span class="r-price">—</span>
-      <div class="r-sigs"><span style="color:#2d5480;font-size:13px">尚未查詢</span></div>
-      <span class="r-ma ma-na">—</span>
-      <span class="r-ma ma-na">—</span>
-      <span class="r-ma ma-na">—</span>
+      <div class="r-mid"><span style="color:#2d5480;font-size:13px">尚未查詢</span></div>
       <button class="r-del" onclick="del(${gi},${si})">×</button>
     </div>`;
   }
-  const d=s.daily, w=s.weekly||{signal:'⬜',action:'空手',days:0};
+  const d=s.daily, w=s.weekly||{action:'空手',days:0};
   const dt=d.days>0?`<span class="sig-days">${d.days}天</span>`:'';
   const wt=w.days>0?`<span class="sig-days">${w.days}週</span>`:'';
-  const m60=s.ma60k240?`<div class="${maColor(s.price,s.ma60k240)}">${s.ma60k240}</div><span class="ma-lbl">60MA240</span>`:`<div class="ma-na">—</div><span class="ma-lbl">60MA240</span>`;
-  const m5 =s.ma5     ?`<div class="${maColor(s.price,s.ma5)}">${s.ma5}</div><span class="ma-lbl">MA5</span>`:`<div class="ma-na">—</div><span class="ma-lbl">MA5</span>`;
-  const m10=s.ma10    ?`<div class="${maColor(s.price,s.ma10)}">${s.ma10}</div><span class="ma-lbl">MA10</span>`:`<div class="ma-na">—</div><span class="ma-lbl">MA10</span>`;
+  const mv=(val,lbl,p)=>val
+    ?`<div class="ma-item"><span class="ma-val ${maColor(p,val)}">${val}</span><span class="ma-lbl">${lbl}</span></div>`
+    :`<div class="ma-item"><span class="ma-val ma-na">—</span><span class="ma-lbl">${lbl}</span></div>`;
   return `<div class="row">
     <span class="r-id">${s.id}</span>
     <span class="r-price">${s.price}</span>
-    <div class="r-sigs">
+    <div class="r-mid">
       <div class="sig-line">
         <span class="sig-lbl">日</span>
-        <span class="sig-txt ${sigColor(d.action)}">${d.signal} ${d.action}</span>
+        <span class="sig-txt ${sigColor(d.action)}">${d.action}</span>
         ${dt}
       </div>
       <div class="sig-line">
         <span class="sig-lbl">週</span>
-        <span class="sig-txt ${sigColor(w.action)}">${w.signal} ${w.action}</span>
+        <span class="sig-txt ${sigColor(w.action)}">${w.action}</span>
         ${wt}
       </div>
+      <div class="ma-row">
+        ${mv(s.ma60k240,'60MA240',s.price)}
+        ${mv(s.ma5,'MA5',s.price)}
+        ${mv(s.ma10,'MA10',s.price)}
+      </div>
     </div>
-    <div class="r-ma">${m60}</div>
-    <div class="r-ma">${m5}</div>
-    <div class="r-ma">${m10}</div>
     <button class="r-del" onclick="del(${gi},${si})">×</button>
   </div>`;
 }
@@ -652,3 +641,4 @@ def home():
 
 if __name__ == '__main__':
     app.run()
+    

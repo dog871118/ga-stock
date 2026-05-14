@@ -587,7 +587,10 @@ async function loadCloud(){
         if(sid&&!ng[gi].stocks.find(s=>s.id===sid)) ng[gi].stocks.push({id:sid});
       }
     });
-    groups=ng; sgr(); render();
+    groups=ng; sgr(); 
+    // 強制清掉舊版 key，避免下次讀到過期資料
+    localStorage.removeItem('ga_g_v4');
+    render();
     btn.textContent='✓ 已載入';
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},1500);
     autoScan();
@@ -629,7 +632,7 @@ function renderHist(){
 function clearHist(){if(!confirm('確定清除所有歷史？'))return;shi([]);renderHist();}
 
 render();
-window.addEventListener('load',()=>{ setTimeout(()=>loadCloud(),2000); });
+window.addEventListener('load',()=>{ setTimeout(()=>loadCloud(),1500); });
 </script>
 </body>
 </html>"""
@@ -641,4 +644,3 @@ def home():
 
 if __name__ == '__main__':
     app.run()
-    

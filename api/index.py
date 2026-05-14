@@ -578,14 +578,16 @@ async function loadCloud(){
     const j=await res.json();
     const rows=j.data||[];
     if(rows.length===0){alert('雲端無資料');btn.textContent='⬇ 載雲端';btn.disabled=false;return;}
-    const vr=rows.filter(r=>r&&String(r[2]||'').trim()!=='');
     const ng=DN.map((n,i)=>({name:n,stocks:[]}));
-    vr.forEach(row=>{
-      const gi=parseInt(row[0]), nm=row[1]||DN[gi], sid=String(row[2]||'').trim().toUpperCase();
-      if(gi>=0&&gi<5){
-        ng[gi].name=nm;
-        if(sid&&!ng[gi].stocks.find(s=>s.id===sid)) ng[gi].stocks.push({id:sid});
-      }
+    // 先更新所有群組名稱（包含空群組）
+    rows.forEach(row=>{
+      const gi=parseInt(row[0]);
+      if(gi>=0&&gi<5 && row[1]) ng[gi].name=row[1];
+    });
+    // 再加入有股票的列
+    rows.filter(r=>r&&String(r[2]||'').trim()!=='').forEach(row=>{
+      const gi=parseInt(row[0]), sid=String(row[2]||'').trim().toUpperCase();
+      if(gi>=0&&gi<5 && sid && !ng[gi].stocks.find(s=>s.id===sid)) ng[gi].stocks.push({id:sid});
     });
     groups=ng; sgr(); 
     // 強制清掉舊版 key，避免下次讀到過期資料

@@ -6,396 +6,720 @@ import pandas as pd
 app = Flask(__name__)
 CORS(app)
 
-GAS_URL = "https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec"
+# ────────────────────────────────────────────
+#  訊號計算邏輯（不變）
+# ────────────────────────────────────────────
+def calc_signal(close_series):
+    """計算四狀態訊號（回溯20期）"""
+    if len(close_series) < 5:
+        return '⬜', '空手', 0
 
-def fetch_df(stock_id, period="60d", interval="1d"):
-    if stock_id.endswith(".TW") or stock_id.endswith(".TWO"):
-        tickers = [stock_id]
-    else:
-        tickers = [stock_id + ".TW", stock_id + ".TWO"]
-    for ticker in tickers:
-        try:
-            df = yf.download(ticker, period=period, interval=interval, auto_adjust=True, progress=False)
-            if not df.empty and len(df) >= 5:
-                return df
-        except:
-            continue
-    return None
+    status  = 'watching'
+    buy_day = None
 
-def get_signal_20d(stock_id):
-    try:
-        df = fetch_df(stock_id, period="60d", interval="1d")
-        if df is None:
-            return None
-        if isinstance(df.columns, pd.MultiIndex):
-            close = df['Close'].iloc[:, 0].dropna()
-        else:
-            close = df['Close'].dropna()
+    for i in range(2, len(close_series)):
+        price      = float(close_series.iloc[i])
+        prev2_high = float(close_series.iloc[i-2:i].max())
+        prev2_low  = float(close_series.iloc[i-2:i].min())
 
-        c20 = close.iloc[-20:]
-        status  = 'watching'
-        buy_day = None
-        for i in range(2, len(c20)):
-            price      = float(c20.iloc[i])
-            prev2_high = float(c20.iloc[i-2:i].max())
-            prev2_low  = float(c20.iloc[i-2:i].min())
-            if status == 'watching':
-                if price > prev2_high:
-                    status  = 'holding'
-                    buy_day = i
-            else:
-                if price < prev2_low:
-                    status  = 'watching'
-                    buy_day = None
-
-        price      = float(c20.iloc[-1])
-        prev2_high = float(c20.iloc[-3:-1].max())
-        prev2_low  = float(c20.iloc[-3:-1].min())
-
-        if status == 'holding':
-            if price < prev2_low:
-                signal, action = '🔴', '賣出'
-            elif buy_day == len(c20) - 1:
-                signal, action = '🟢', '買進'
-            else:
-                signal, action = '🟡', '持有'
-            hold_days = (len(c20) - 1) - buy_day if buy_day is not None else 0
-        else:
+        if status == 'watching':
             if price > prev2_high:
-                signal, action = '🟢', '買進'
+                status  = 'holding'
+                buy_day = i
+        else:
+            if price < prev2_low:
+                status  = 'watching'
+                buy_day = None
+
+    price      = float(close_series.iloc[-1])
+    prev2_high = float(close_series.iloc[-3:-1].max())
+    prev2_low  = float(close_series.iloc[-3:-1].min())
+
+    if status == 'holding':
+        if price < prev2_low:
+            signal, action = '🔴', '賣出'
+        elif buy_day == len(close_series) - 1:
+            signal, action = '🟢', '買進'
+        else:
+            signal, action = '🟡', '持有'
+        hold_days = (len(close_series) - 1) - buy_day if buy_day is not None else 0
+    else:
+        if price > prev2_high:
+            signal, action = '🟢', '買進'
+        else:
+            signal, action = '⬜', '空手'
+        hold_days = 0
+
+    return signal, action, hold_days
+
+
+def resolve_ticker(stock_id):
+    """自動判斷上市(.TW)或上櫃(.TWO)，回傳正確 ticker"""
+    if stock_id.endswith(".TW") or stock_id.endswith(".TWO"):
+        return stock_id
+    # 先試上市
+    t = stock_id + ".TW"
+    try:
+        df = yf.download(t, period="5d", auto_adjust=True, progress=False)
+        if not df.empty and len(df) >= 1:
+            return t
+    except:
+        pass
+    # 再試上櫃
+    return stock_id + ".TWO"
+
+
+def get_signals(stock_id):
+    try:
+        ticker = resolve_ticker(stock_id)
+
+        # 日線
+        df_d = yf.download(ticker, period="40d", auto_adjust=True, progress=False)
+        if df_d.empty or len(df_d) < 5:
+            return None
+
+        if isinstance(df_d.columns, pd.MultiIndex):
+            close_d = df_d['Close'].iloc[:, 0].dropna()
+        else:
+            close_d = df_d['Close'].dropna()
+
+        close_d = close_d.iloc[-20:]
+        price   = round(float(close_d.iloc[-1]), 2)
+        d_signal, d_action, d_days = calc_signal(close_d)
+
+        # 週線
+        df_w = yf.download(ticker, period="60wk", interval="1wk",
+                           auto_adjust=True, progress=False)
+        if df_w.empty or len(df_w) < 5:
+            w_signal, w_action, w_days = '⬜', '空手', 0
+        else:
+            if isinstance(df_w.columns, pd.MultiIndex):
+                close_w = df_w['Close'].iloc[:, 0].dropna()
             else:
-                signal, action = '⬜', '空手'
-            hold_days = 0
-
-        ma5  = round(float(close.iloc[-5:].mean()), 1)  if len(close) >= 5  else None
-        ma10 = round(float(close.iloc[-10:].mean()), 1) if len(close) >= 10 else None
-
-        ma60_240 = None
-        try:
-            df60 = fetch_df(stock_id, period="60d", interval="60m")
-            if df60 is not None and len(df60) >= 10:
-                if isinstance(df60.columns, pd.MultiIndex):
-                    c60 = df60['Close'].iloc[:, 0].dropna()
-                else:
-                    c60 = df60['Close'].dropna()
-                if len(c60) >= 240:
-                    ma60_240 = round(float(c60.iloc[-240:].mean()), 1)
-                else:
-                    ma60_240 = round(float(c60.mean()), 1)
-        except:
-            ma60_240 = None
+                close_w = df_w['Close'].dropna()
+            close_w = close_w.iloc[-20:]
+            w_signal, w_action, w_days = calc_signal(close_w)
 
         return {
-            'signal':    signal,
-            'action':    action,
-            'price':     round(price, 1),
-            'hold_days': hold_days,
-            'ma5':       ma5,
-            'ma10':      ma10,
-            'ma60_240':  ma60_240,
+            'price':   price,
+            'daily':   {'signal': d_signal, 'action': d_action, 'days': d_days},
+            'weekly':  {'signal': w_signal, 'action': w_action, 'days': w_days},
         }
     except:
         return None
 
+
+# ────────────────────────────────────────────
+#  API 路由
+# ────────────────────────────────────────────
 @app.route('/api/check', methods=['GET'])
 def check_stock():
     stock_id = request.args.get('id', '').strip().upper()
     if not stock_id:
         return jsonify({'error': '請輸入股票代號'}), 400
-    result = get_signal_20d(stock_id)
+    result = get_signals(stock_id)
     if result is None:
         return jsonify({'error': '查無資料，請確認代號'}), 404
     return jsonify(result)
 
+
 @app.route('/api/batch', methods=['GET'])
 def batch_check():
-    ids = request.args.get('ids', '')
-    if not ids:
+    ids_raw = request.args.get('ids', '').strip().upper()
+    if not ids_raw:
         return jsonify({'error': '請輸入股票代號'}), 400
-    stock_list = [s.strip().upper() for s in ids.split(',') if s.strip()]
-    results = {}
-    for stock_id in stock_list:
-        results[stock_id] = get_signal_20d(stock_id)
-    return jsonify(results)
+    ids = [x.strip() for x in ids_raw.split(',') if x.strip()]
+    result = {}
+    for sid in ids:
+        data = get_signals(sid)
+        if data:
+            result[sid] = data
+    return jsonify(result)
+
+
+import requests as http_requests
+import json as _json
+
+GAS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec"
+
+@app.route('/api/sync-load', methods=['GET'])
+def sync_load():
+    try:
+        r = http_requests.get(GAS_ENDPOINT, params={'action': 'load'}, timeout=15)
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sync-save', methods=['POST'])
+def sync_save():
+    try:
+        payload = request.json.get('payload', [])
+        r = http_requests.get(GAS_ENDPOINT, params={
+            'action': 'save',
+            'payload': _json.dumps(payload)
+        }, timeout=15)
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ────────────────────────────────────────────
+#  前端 HTML
+# ────────────────────────────────────────────
+GAS_URL = "https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec"
 
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>GA 買賣訊號</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>GA 股票訊號</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg:      #0d1b2a;
-  --card:    #132338;
-  --card2:   #0f1e30;
-  --border:  #1e3a5f;
-  --text1:   #e8f0fe;
-  --text2:   #4a6fa5;
-  --text3:   #2d5480;
-  --accent:  #1a73e8;
-  --green:   #34c759;
-  --yellow:  #ffd60a;
-  --red:     #ff453a;
-  --radius:  14px;
-  --radius-s:8px;
+  --bg:        #0d0f14;
+  --surface:   #161a23;
+  --border:    #252a38;
+  --text:      #e2e8f0;
+  --muted:     #64748b;
+  --accent:    #38bdf8;
+  --accent2:   #818cf8;
+  --green:     #4ade80;
+  --yellow:    #fbbf24;
+  --red:       #f87171;
+  --gray:      #475569;
+  --radius:    12px;
+  --mono:      'DM Mono', monospace;
+  --sans:      'Noto Sans TC', sans-serif;
 }
-* { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
-body { font-family:-apple-system,"Helvetica Neue",sans-serif; background:var(--bg); color:var(--text1); min-height:100vh; padding-bottom:60px; }
-.wrap { max-width:860px; margin:0 auto; padding:0 20px; }
-.header { padding:40px 0 10px; }
-.header-sub { font-size:11px; color:var(--text2); letter-spacing:0.1em; text-transform:uppercase; margin-bottom:6px; }
-.header h1 { font-size:26px; font-weight:800; color:var(--text1); letter-spacing:-0.03em; }
-.sync-bar { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding-bottom:10px; }
-.btn-sync { padding:5px 12px; border-radius:12px; border:1px solid var(--border); background:transparent; color:var(--text2); font-size:12px; cursor:pointer; font-family:inherit; }
-.sync-st { font-size:11px; color:var(--text3); }
-.tabs-wrap { margin-bottom:10px; overflow-x:auto; scrollbar-width:none; }
-.tabs-wrap::-webkit-scrollbar { display:none; }
-.tabs { display:flex; gap:6px; width:max-content; }
-.tab { padding:6px 14px; border-radius:16px; font-size:13px; font-weight:500; cursor:pointer; border:1px solid var(--border); color:var(--text2); background:var(--card); white-space:nowrap; }
-.tab.active { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; }
-.panel { display:none; }
-.panel.active { display:block; }
-.card { background:var(--card); border-radius:var(--radius); border:1px solid var(--border); overflow:hidden; }
-.gname-wrap { padding:14px 16px 12px; }
-.gname { width:100%; background:transparent; border:none; font-size:16px; font-weight:700; color:var(--text1); font-family:inherit; }
-.gname:focus { outline:none; }
-.sep { height:1px; background:var(--border); }
-.add-row { display:flex; gap:8px; padding:10px 16px; }
-.add-inp { flex:1; background:var(--card2); border:1px solid var(--border); border-radius:var(--radius-s); padding:9px 12px; color:var(--text1); font-size:14px; font-family:inherit; }
-.add-inp:focus { outline:none; border-color:var(--accent); }
-.add-inp::placeholder { color:var(--text3); }
-.btn-add { padding:9px 16px; border-radius:var(--radius-s); border:none; background:var(--accent); color:#fff; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap; }
-.btn-add:active { opacity:.7; }
 
-/* 用 table 取代 grid，自動分配欄寬 */
-table { width:100%; border-collapse:collapse; }
-thead tr { border-top:1px solid var(--border); }
-thead th {
-  padding:8px 8px;
-  font-size:11px; color:var(--text3);
-  font-weight:700; letter-spacing:0.05em;
-  text-transform:uppercase;
-  text-align:right;
-  white-space:nowrap;
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+/* ── 頂部標題列 ── */
+.header {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(13,15,20,0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 16px 10px;
 }
-thead th:first-child { text-align:left; }
-thead th:nth-child(2) { text-align:left; }
-tbody tr { border-top:1px solid var(--border); }
-tbody tr:hover { background:rgba(255,255,255,0.02); }
-tbody td { padding:11px 8px; vertical-align:middle; white-space:nowrap; }
+.header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.logo { font-family: var(--mono); font-size: 15px; color: var(--accent); letter-spacing: 2px; }
+.logo span { color: var(--muted); }
+.hist-btn {
+  font-size: 12px; padding: 5px 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; color: var(--muted); cursor: pointer;
+  transition: all .2s;
+}
+.hist-btn:hover, .hist-btn.active { border-color: var(--accent2); color: var(--accent2); }
 
-/* 代號欄 */
-.td-id { text-align:left; }
-.id-num { font-size:16px; font-weight:800; color:var(--text1); }
+/* ── 群組頁籤 ── */
+.tabs-wrap { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.tabs-wrap::-webkit-scrollbar { display: none; }
+.tab {
+  flex-shrink: 0; padding: 5px 14px; border-radius: 20px; font-size: 12px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted); cursor: pointer; transition: all .2s;
+  white-space: nowrap;
+}
+.tab.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
 
-/* 收盤價欄 */
-.td-price { text-align:left; }
-.price-val { font-size:16px; font-weight:700; color:var(--text1); }
+/* ── 主內容 ── */
+.main { padding: 14px 12px 80px; max-width: 480px; margin: 0 auto; }
 
-/* 訊號欄 */
-.td-sig { text-align:left; }
-.sig-row { display:flex; align-items:center; gap:6px; white-space:nowrap; }
-.sig-emoji { font-size:16px; }
-.sig-action { font-size:15px; font-weight:700; }
-.sig-days { font-size:12px; color:var(--text2); margin-left:2px; }
-.sig-g { color:var(--green); }
-.sig-y { color:var(--yellow); }
-.sig-r { color:var(--red); }
-.sig-w { color:var(--text1); }
+/* ── 群組標頭 ── */
+.group-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+}
+.group-name-input {
+  flex: 1; background: transparent; border: none; border-bottom: 1px dashed var(--border);
+  color: var(--text); font-size: 15px; font-weight: 700; padding: 2px 0;
+  font-family: var(--sans);
+}
+.group-name-input:focus { outline: none; border-bottom-color: var(--accent); }
+.scan-btn {
+  padding: 6px 16px; background: var(--accent); color: #000;
+  border: none; border-radius: 20px; font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: all .2s; white-space: nowrap;
+}
+.scan-btn:hover { background: #7dd3fc; }
+.scan-btn:disabled { background: var(--border); color: var(--muted); cursor: default; }
+.update-time { font-size: 11px; color: var(--muted); margin-bottom: 8px; font-family: var(--mono); }
 
-/* 均線欄 */
-.td-ma { text-align:right; }
-.ma-val { font-size:16px; font-weight:700; }
-.above { color:var(--green); }
-.below { color:#ff6b6b; }
-.na    { color:var(--text3); font-size:13px; }
+/* ── 新增股票列 ── */
+.add-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.add-input {
+  flex: 1; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 9px 12px;
+  color: var(--text); font-size: 14px; font-family: var(--mono);
+}
+.add-input::placeholder { color: var(--muted); }
+.add-input:focus { outline: none; border-color: var(--accent); }
+.add-input-btn {
+  padding: 9px 16px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--accent); font-size: 18px;
+  cursor: pointer; transition: all .2s;
+}
+.add-input-btn:hover { background: var(--accent); color: #000; }
 
-/* 刪除欄 */
-.td-del { text-align:right; width:36px; }
-.btn-del { width:24px; height:24px; border-radius:50%; border:none; background:rgba(255,69,58,.15); color:var(--red); font-size:13px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
-.btn-del:active { background:rgba(255,69,58,.35); }
+/* ── 股票卡片 ── */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); margin-bottom: 8px;
+  transition: border-color .2s;
+  overflow: hidden;
+}
+.card:hover { border-color: var(--muted); }
+.card-main {
+  display: flex; align-items: center; padding: 10px 12px; gap: 10px;
+}
+.stock-id {
+  font-family: var(--mono); font-size: 15px; font-weight: 500;
+  color: var(--accent); min-width: 58px;
+}
+.stock-name { font-size: 12px; color: var(--muted); min-width: 40px; }
+.signals { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.sig-row { display: flex; align-items: center; gap: 6px; }
+.sig-label { font-size: 10px; color: var(--muted); width: 20px; font-family: var(--mono); }
+.sig-badge {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px;
+  font-weight: 700; letter-spacing: .5px;
+}
+.sig-green  { background: rgba(74,222,128,.15); color: var(--green); }
+.sig-yellow { background: rgba(251,191,36,.15);  color: var(--yellow); }
+.sig-red    { background: rgba(248,113,113,.15); color: var(--red); }
+.sig-gray   { background: rgba(71,85,105,.2);    color: var(--muted); }
+.sig-days { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.price-col { text-align: right; }
+.price-val { font-family: var(--mono); font-size: 15px; font-weight: 500; }
+.del-btn {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 16px; padding: 4px; transition: color .2s; line-height: 1;
+}
+.del-btn:hover { color: var(--red); }
+.loading-row { padding: 16px; text-align: center; color: var(--muted); font-size: 13px; }
 
-.empty { padding:28px 16px; text-align:center; color:var(--text3); font-size:14px; }
-.loading { padding:20px 16px; text-align:center; color:var(--text3); font-size:14px; }
-.err { padding:12px 16px; color:var(--red); font-size:14px; }
-.bot { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-top:1px solid var(--border); }
-.upd { font-size:11px; color:var(--text3); }
-.btn-scan { padding:10px 24px; border-radius:20px; border:none; background:var(--green); color:#000; font-size:14px; font-weight:800; cursor:pointer; font-family:inherit; }
-.btn-scan:active { opacity:.7; }
-.btn-scan:disabled { background:var(--card2); color:var(--text3); cursor:not-allowed; }
+/* ── 歷史面板 ── */
+.hist-panel {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,.7); backdrop-filter: blur(4px);
+  display: none; align-items: flex-end;
+}
+.hist-panel.open { display: flex; }
+.hist-inner {
+  width: 100%; max-width: 480px; margin: 0 auto;
+  background: var(--surface); border-radius: 20px 20px 0 0;
+  border: 1px solid var(--border); max-height: 75vh;
+  display: flex; flex-direction: column;
+}
+.hist-header {
+  padding: 16px 16px 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.hist-title { font-size: 15px; font-weight: 700; }
+.hist-close {
+  background: none; border: none; color: var(--muted);
+  font-size: 22px; cursor: pointer; line-height: 1;
+}
+.hist-body { overflow-y: auto; padding: 8px 0; }
+.hist-day { padding: 4px 16px; }
+.hist-date {
+  font-size: 11px; font-family: var(--mono); color: var(--accent2);
+  padding: 8px 0 4px; border-bottom: 1px solid var(--border); margin-bottom: 4px;
+}
+.hist-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 0; border-bottom: 1px solid rgba(37,42,56,.5);
+  font-size: 13px;
+}
+.hist-sid { font-family: var(--mono); color: var(--accent); min-width: 52px; }
+.hist-price { font-family: var(--mono); color: var(--text); min-width: 50px; }
+.hist-empty { padding: 24px; text-align: center; color: var(--muted); font-size: 13px; }
+.hist-clear-btn {
+  margin: 8px 16px; padding: 8px; background: none;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--muted); cursor: pointer; font-size: 12px; width: calc(100% - 32px);
+  transition: all .2s;
+}
+.hist-clear-btn:hover { border-color: var(--red); color: var(--red); }
+
+/* ── 空群組提示 ── */
+.empty-hint {
+  text-align: center; padding: 32px 0; color: var(--muted); font-size: 13px; line-height: 2;
+}
+
+@media (max-width: 360px) {
+  .stock-name { display: none; }
+}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="header">
-    <div class="header-sub">2 日高低點突破系統</div>
-    <h1>GA 買賣訊號</h1>
+
+<div class="header">
+  <div class="header-top">
+    <div class="logo">GA<span>.</span>STOCK</div>
+    <div style="display:flex;gap:6px">
+      <button class="hist-btn" id="cloudLoadBtn" onclick="loadCloud()">⬇️ 載雲端</button>
+      <button class="hist-btn" id="cloudSaveBtn" onclick="saveCloud()">☁️ 存雲端</button>
+      <button class="hist-btn" id="histToggle" onclick="toggleHist()">📋 歷史</button>
+    </div>
   </div>
-  <div class="sync-bar">
-    <span class="sync-st" id="syncSt">尚未同步</span>
-    <button class="btn-sync" onclick="syncDown()">從雲端載入</button>
-    <button class="btn-sync" onclick="syncUp()">儲存至雲端</button>
-  </div>
-  <div class="tabs-wrap"><div class="tabs" id="tabs"></div></div>
-  <div id="panels"></div>
+  <div class="tabs-wrap" id="tabsWrap"></div>
 </div>
+
+<div class="main" id="mainContent"></div>
+
+<!-- 歷史面板 -->
+<div class="hist-panel" id="histPanel" onclick="closeHistIfBg(event)">
+  <div class="hist-inner">
+    <div class="hist-header">
+      <div class="hist-title">掃描歷史紀錄</div>
+      <button class="hist-close" onclick="toggleHist()">×</button>
+    </div>
+    <div class="hist-body" id="histBody"></div>
+    <button class="hist-clear-btn" onclick="clearHistory()">🗑 清除所有歷史</button>
+  </div>
+</div>
+
 <script>
-var GAS="https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec";
-var DEF=[
-  {name:"短線強勢股",stocks:[]},{name:"波段持股",stocks:[]},
-  {name:"觀察名單",stocks:[]},{name:"自選群組4",stocks:[]},{name:"自選群組5",stocks:[]}
-];
-function loadL(){ try{ var s=localStorage.getItem("ga_v3"); return s?JSON.parse(s):DEF; }catch(e){ return DEF; } }
-function saveL(){ localStorage.setItem("ga_v3",JSON.stringify(groups)); }
-var groups=loadL(), activeTab=0;
-function g2rows(gs){
-  var rows=[];
-  gs.forEach(function(g,gi){
-    if(g.stocks&&g.stocks.length>0){ g.stocks.forEach(function(s){ rows.push([gi,g.name,s.id]); }); }
-    else{ rows.push([gi,g.name,'']); }
-  });
-  return rows;
+// ── 資料存取 ──────────────────────────────────────────
+const GROUPS_KEY  = 'ga_groups_v3';
+const HISTORY_KEY = 'ga_history_v3';
+const DEFAULT_GROUPS = ['短線強勢股','波段持股','觀察名單','自選群組4','自選群組5'];
+
+function loadGroups() {
+  try {
+    const d = JSON.parse(localStorage.getItem(GROUPS_KEY));
+    if (d && d.length === 5) return d;
+  } catch(e){}
+  return DEFAULT_GROUPS.map(n => ({ name: n, stocks: [] }));
 }
-function rows2g(rows){
-  var gs=DEF.map(function(g){ return {name:g.name,stocks:[]}; });
-  rows.forEach(function(r){
-    if(!r||r.length<3) return;
-    var gi=parseInt(r[0]);
-    if(isNaN(gi)||gi<0||gi>4) return;
-    gs[gi].name=r[1]||gs[gi].name;
-    if(r[2]) gs[gi].stocks.push({id:String(r[2])});
-  });
-  return gs;
+function saveGroups() { localStorage.setItem(GROUPS_KEY, JSON.stringify(groups)); }
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch(e){ return []; }
 }
-function setSt(m){ document.getElementById("syncSt").textContent=m; }
-function syncUp(){
-  setSt("儲存中...");
-  fetch(GAS+"?action=save&payload="+encodeURIComponent(JSON.stringify(g2rows(groups))))
-    .then(function(r){return r.json();})
-    .then(function(d){ setSt(d.ok?"已儲存 "+new Date().toLocaleTimeString():"儲存失敗"); })
-    .catch(function(){ setSt("儲存失敗"); });
+function saveHistory(h) { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); }
+
+// ── 狀態 ─────────────────────────────────────────────
+let groups   = loadGroups();
+let curGroup = 0;
+
+// ── 輔助 ─────────────────────────────────────────────
+function sigClass(action) {
+  return action==='買進'?'sig-green': action==='持有'?'sig-yellow': action==='賣出'?'sig-red':'sig-gray';
 }
-function syncDown(){
-  setSt("載入中...");
-  fetch(GAS+"?action=load")
-    .then(function(r){return r.json();})
-    .then(function(d){
-      if(d.data&&d.data.length>0){
-        groups=rows2g(d.data); saveL(); activeTab=0; render();
-        setSt("已載入 "+new Date().toLocaleTimeString());
-      } else { setSt("雲端無資料"); }
-    })
-    .catch(function(){ setSt("載入失敗"); });
+function nowStr() {
+  const d = new Date();
+  return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()
+    +' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
 }
-function render(){
-  var te=document.getElementById("tabs"),pe=document.getElementById("panels");
-  te.innerHTML=""; pe.innerHTML="";
-  groups.forEach(function(g,i){
-    var t=document.createElement("div");
-    t.className="tab"+(i===activeTab?" active":"");
-    t.textContent=g.name||("群組"+(i+1));
-    t.onclick=(function(idx){return function(){activeTab=idx;render();};})(i);
-    te.appendChild(t);
-    var p=document.createElement("div");
-    p.className="panel"+(i===activeTab?" active":"");
-    p.innerHTML=
-      "<div class=\\"card\\">"+
-      "<div class=\\"gname-wrap\\"><input class=\\"gname\\" value=\\""+esc(g.name)+"\\" placeholder=\\"群組名稱\\" onchange=\\"ren("+i+",this.value)\\"></div>"+
-      "<div class=\\"sep\\"></div>"+
-      "<div class=\\"add-row\\">"+
-        "<input class=\\"add-inp\\" type=\\"text\\" id=\\"ai"+i+"\\" placeholder=\\"輸入代號，如 2330、6016\\" maxlength=\\"12\\" onkeydown=\\"if(event.key===&quot;Enter&quot;)addS("+i+")\\">"+
-        "<button class=\\"btn-add\\" onclick=\\"addS("+i+")\\">新增</button>"+
-      "</div>"+
-      "<table>"+
-        "<thead><tr>"+
-          "<th>代號</th><th>收盤價</th><th>訊號／天數</th>"+
-          "<th>60MA240</th><th>MA5</th><th>MA10</th><th></th>"+
-        "</tr></thead>"+
-        "<tbody id=\\"sl"+i+"\\">"+renderRows(g.stocks,i)+"</tbody>"+
-      "</table>"+
-      "<div class=\\"bot\\">"+
-        "<span class=\\"upd\\" id=\\"ut"+i+"\\"></span>"+
-        "<button class=\\"btn-scan\\" id=\\"sb"+i+"\\" onclick=\\"scan("+i+")\\">掃描訊號</button>"+
-      "</div>"+
-      "</div>";
-    pe.appendChild(p);
-  });
+function dateKey() {
+  const d = new Date();
+  return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate();
 }
-function maClass(price,ma){
-  if(ma==null||price==null) return "na";
-  return price>=ma?"above":"below";
+
+// ── 渲染頁籤 ─────────────────────────────────────────
+function renderTabs() {
+  const w = document.getElementById('tabsWrap');
+  w.innerHTML = groups.map((g,i)=>
+    `<button class="tab${i===curGroup?' active':''}" onclick="switchTab(${i})">${g.name}</button>`
+  ).join('');
 }
-function maVal(ma){ return ma!=null?ma:"—"; }
-function renderRows(stocks,gi){
-  if(!stocks||stocks.length===0)
-    return "<tr><td colspan=\\"7\\"><div class=\\"empty\\">尚未新增股票</div></td></tr>";
-  return stocks.map(function(s,si){
-    var sig=s.signal||"⬜", act=s.action||"—";
-    var price=s.price!=null?s.price:"—";
-    var days=s.hold_days>0?" "+s.hold_days+"天":"";
-    var cls=sig==="🟢"?"sig-g":sig==="🟡"?"sig-y":sig==="🔴"?"sig-r":"sig-w";
-    var m240c=maClass(s.price,s.ma60_240);
-    var m5c=maClass(s.price,s.ma5);
-    var m10c=maClass(s.price,s.ma10);
-    return "<tr>"+
-      "<td class=\\"td-id\\"><span class=\\"id-num\\">"+esc(s.id)+"</span></td>"+
-      "<td class=\\"td-price\\"><span class=\\"price-val\\">"+price+"</span></td>"+
-      "<td class=\\"td-sig\\"><div class=\\"sig-row\\">"+
-        "<span class=\\"sig-emoji\\">"+sig+"</span>"+
-        "<span class=\\"sig-action "+cls+"\\">"+act+"</span>"+
-        "<span class=\\"sig-days\\">"+days+"</span>"+
-      "</div></td>"+
-      "<td class=\\"td-ma\\"><span class=\\"ma-val "+m240c+"\\">"+maVal(s.ma60_240)+"</span></td>"+
-      "<td class=\\"td-ma\\"><span class=\\"ma-val "+m5c+"\\">"+maVal(s.ma5)+"</span></td>"+
-      "<td class=\\"td-ma\\"><span class=\\"ma-val "+m10c+"\\">"+maVal(s.ma10)+"</span></td>"+
-      "<td class=\\"td-del\\"><button class=\\"btn-del\\" onclick=\\"delS("+gi+","+si+")\\">&#xd7;</button></td>"+
-      "</tr>";
-  }).join("");
+
+// ── 渲染主內容 ───────────────────────────────────────
+function render() {
+  renderTabs();
+  const g = groups[curGroup];
+  let html = `
+    <div class="group-header">
+      <input class="group-name-input" value="${g.name}"
+        onchange="renameGroup(${curGroup},this.value)"
+        onblur="renameGroup(${curGroup},this.value)">
+      <button class="scan-btn" id="scanBtn" onclick="scanGroup(${curGroup})">⚡ 掃描</button>
+    </div>
+    <div class="update-time" id="updateTime${curGroup}">${g.lastUpdate||''}</div>
+    <div class="add-row">
+      <input class="add-input" id="addInput" placeholder="輸入代號，例：2330 或 3550.TWO"
+        onkeydown="if(event.key==='Enter')addStock(${curGroup})">
+      <button class="add-input-btn" onclick="addStock(${curGroup})">＋</button>
+    </div>
+    <div id="stockList${curGroup}">
+  `;
+  if (!g.stocks || g.stocks.length === 0) {
+    html += `<div class="empty-hint">尚無股票<br>輸入代號後按 ＋ 新增</div>`;
+  } else {
+    html += renderCards(g.stocks, curGroup);
+  }
+  html += '</div>';
+  document.getElementById('mainContent').innerHTML = html;
 }
-function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-function ren(i,v){ groups[i].name=v; saveL(); document.querySelectorAll(".tab")[i].textContent=v||("群組"+(i+1)); }
-function addS(i){
-  var inp=document.getElementById("ai"+i), val=inp.value.trim().toUpperCase();
-  if(!val) return;
-  if(groups[i].stocks.find(function(s){return s.id===val;})){ alert("已存在此代號"); return; }
-  groups[i].stocks.push({id:val}); saveL(); inp.value="";
-  document.getElementById("sl"+i).innerHTML=renderRows(groups[i].stocks,i);
+
+function renderCards(stocks, gi) {
+  return stocks.map((s, si) => {
+    const hasData = s.daily;
+    if (!hasData) {
+      return `<div class="card">
+        <div class="card-main">
+          <div class="stock-id">${s.id}</div>
+          <div class="signals"><div style="color:var(--muted);font-size:12px">— 尚未查詢 —</div></div>
+          <button class="del-btn" onclick="removeStock(${gi},${si})">✕</button>
+        </div></div>`;
+    }
+    const d = s.daily, w = s.weekly||{signal:'⬜',action:'空手',days:0};
+    const dDays = d.days>0?`<span class="sig-days">${d.days}天</span>`:'';
+    const wDays = w.days>0?`<span class="sig-days">${w.days}週</span>`:'';
+    return `<div class="card">
+      <div class="card-main">
+        <div>
+          <div class="stock-id">${s.id}</div>
+        </div>
+        <div class="signals">
+          <div class="sig-row">
+            <span class="sig-label">日</span>
+            <span class="sig-badge ${sigClass(d.action)}">${d.signal} ${d.action}</span>
+            ${dDays}
+          </div>
+          <div class="sig-row">
+            <span class="sig-label">週</span>
+            <span class="sig-badge ${sigClass(w.action)}">${w.signal} ${w.action}</span>
+            ${wDays}
+          </div>
+        </div>
+        <div class="price-col">
+          <div class="price-val">${s.price||'—'}</div>
+        </div>
+        <button class="del-btn" onclick="removeStock(${gi},${si})">✕</button>
+      </div>
+    </div>`;
+  }).join('');
 }
-function delS(gi,si){ groups[gi].stocks.splice(si,1); saveL(); document.getElementById("sl"+gi).innerHTML=renderRows(groups[gi].stocks,gi); }
-function scan(i){
-  var stocks=groups[i].stocks;
-  if(!stocks||stocks.length===0){ alert("請先新增股票"); return; }
-  var ids=stocks.map(function(s){return s.id;}).join(",");
-  var btn=document.getElementById("sb"+i);
-  btn.disabled=true; btn.textContent="查詢中...";
-  document.getElementById("sl"+i).innerHTML="<tr><td colspan=\\"7\\"><div class=\\"loading\\">查詢中，請稍候...</div></td></tr>";
-  fetch("/api/batch?ids="+encodeURIComponent(ids))
-    .then(function(r){return r.json();})
-    .then(function(data){
-      stocks.forEach(function(s){
-        var r=data[s.id];
-        if(r){ s.signal=r.signal; s.action=r.action; s.price=r.price; s.hold_days=r.hold_days; s.ma5=r.ma5; s.ma10=r.ma10; s.ma60_240=r.ma60_240; }
-      });
-      saveL();
-      document.getElementById("sl"+i).innerHTML=renderRows(stocks,i);
-      var now=new Date();
-      document.getElementById("ut"+i).textContent="更新 "+now.getFullYear()+"/"+(now.getMonth()+1)+"/"+now.getDate()+" "+now.getHours()+":"+String(now.getMinutes()).padStart(2,"0");
-      btn.disabled=false; btn.innerHTML="掃描訊號";
-    })
-    .catch(function(){
-      document.getElementById("sl"+i).innerHTML="<tr><td colspan=\\"7\\"><div class=\\"err\\">連線失敗，請稍後再試</div></td></tr>";
-      btn.disabled=false; btn.innerHTML="掃描訊號";
+
+// ── 操作 ─────────────────────────────────────────────
+function switchTab(i) { curGroup = i; render(); }
+
+function renameGroup(gi, val) {
+  groups[gi].name = val.trim() || DEFAULT_GROUPS[gi];
+  saveGroups(); renderTabs();
+}
+
+function addStock(gi) {
+  const inp = document.getElementById('addInput');
+  const id = inp.value.trim().toUpperCase();
+  if (!id) return;
+  if (groups[gi].stocks.find(s => s.id === id)) { alert('已有此代號'); return; }
+  groups[gi].stocks.push({ id });
+  saveGroups();
+  inp.value = '';
+  render();
+}
+
+function removeStock(gi, si) {
+  groups[gi].stocks.splice(si, 1);
+  saveGroups();
+  render();
+}
+
+async function scanGroup(gi) {
+  const stocks = groups[gi].stocks;
+  if (!stocks || stocks.length === 0) { alert('請先新增股票'); return; }
+
+  const btn = document.getElementById('scanBtn');
+  btn.disabled = true; btn.textContent = '查詢中…';
+  document.getElementById('stockList'+gi).innerHTML =
+    '<div class="loading-row">⏳ 查詢中，請稍候…</div>';
+
+  const ids = stocks.map(s => s.id).join(',');
+  try {
+    const res  = await fetch('/api/batch?ids=' + encodeURIComponent(ids));
+    const data = await res.json();
+
+    const histEntries = [];
+    stocks.forEach(s => {
+      const r = data[s.id];
+      if (r) {
+        s.price  = r.price;
+        s.daily  = r.daily;
+        s.weekly = r.weekly;
+        histEntries.push({ id: s.id, price: r.price, daily: r.daily, weekly: r.weekly });
+      }
     });
+
+    // 寫歷史
+    if (histEntries.length > 0) {
+      const hist = loadHistory();
+      const today = dateKey();
+      let dayEntry = hist.find(h => h.date === today);
+      if (!dayEntry) { dayEntry = { date: today, scans: [] }; hist.unshift(dayEntry); }
+      dayEntry.scans.unshift({ time: nowStr(), group: groups[gi].name, stocks: histEntries });
+      if (hist.length > 30) hist.splice(30);
+      saveHistory(hist);
+    }
+
+    groups[gi].lastUpdate = '更新：' + nowStr();
+    saveGroups();
+    document.getElementById('updateTime'+gi).textContent = groups[gi].lastUpdate;
+    document.getElementById('stockList'+gi).innerHTML = renderCards(stocks, gi);
+  } catch(e) {
+    document.getElementById('stockList'+gi).innerHTML =
+      '<div class="loading-row" style="color:var(--red)">❌ 連線失敗，請稍後再試</div>';
+  }
+  btn.disabled = false; btn.textContent = '⚡ 掃描';
 }
+
+// ── 歷史面板 ─────────────────────────────────────────
+function toggleHist() {
+  const p = document.getElementById('histPanel');
+  const isOpen = p.classList.contains('open');
+  if (isOpen) { p.classList.remove('open'); return; }
+  renderHistPanel();
+  p.classList.add('open');
+  document.getElementById('histToggle').classList.add('active');
+}
+function closeHistIfBg(e) {
+  if (e.target === document.getElementById('histPanel')) toggleHist();
+}
+
+function renderHistPanel() {
+  const hist = loadHistory();
+  const body = document.getElementById('histBody');
+  document.getElementById('histToggle').classList.toggle('active',
+    document.getElementById('histPanel').classList.contains('open'));
+  if (!hist || hist.length === 0) {
+    body.innerHTML = '<div class="hist-empty">尚無歷史紀錄<br>掃描後自動記錄</div>'; return;
+  }
+  let html = '';
+  hist.forEach(day => {
+    html += `<div class="hist-day"><div class="hist-date">📅 ${day.date}</div>`;
+    day.scans.forEach(scan => {
+      html += `<div style="font-size:11px;color:var(--muted);padding:2px 0 4px;font-family:var(--mono)">${scan.time} · ${scan.group}</div>`;
+      scan.stocks.forEach(s => {
+        const d = s.daily||{}, w = s.weekly||{};
+        html += `<div class="hist-row">
+          <span class="hist-sid">${s.id}</span>
+          <span class="hist-price">${s.price}</span>
+          <span class="sig-badge ${sigClass(d.action)}" style="font-size:10px">${d.signal} 日${d.action||''}</span>
+          <span class="sig-badge ${sigClass(w.action)}" style="font-size:10px">${w.signal} 週${w.action||''}</span>
+        </div>`;
+      });
+    });
+    html += '</div>';
+  });
+  body.innerHTML = html;
+}
+
+function clearHistory() {
+  if (!confirm('確定清除所有歷史紀錄？')) return;
+  saveHistory([]);
+  renderHistPanel();
+}
+
+// ── 雲端同步（Google Sheet，JSONP 解決跨域）──────────────
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec';
+
+async function saveCloud() {
+  const btn = document.getElementById('cloudSaveBtn');
+  btn.textContent = '☁️ 儲存中…'; btn.disabled = true;
+  const rows = [];
+  groups.forEach((g, gi) => {
+    if (g.stocks && g.stocks.length > 0) {
+      g.stocks.forEach(s => rows.push([gi, g.name, s.id]));
+    } else {
+      rows.push([gi, g.name, '']);
+    }
+  });
+  try {
+    const res = await fetch('/api/sync-save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payload: rows })
+    });
+    const json = await res.json();
+    if (json.ok) {
+      btn.textContent = '✅ 已儲存';
+    } else {
+      btn.textContent = '❌ 失敗';
+    }
+    setTimeout(() => { btn.textContent = '☁️ 存雲端'; btn.disabled = false; }, 2000);
+  } catch(e) {
+    btn.textContent = '❌ 失敗'; btn.disabled = false;
+    setTimeout(() => { btn.textContent = '☁️ 存雲端'; }, 2000);
+  }
+}
+
+async function loadCloud() {
+  const btn = document.getElementById('cloudLoadBtn');
+  btn.textContent = '⬇️ 載入中…'; btn.disabled = true;
+  try {
+    const res  = await fetch('/api/sync-load', { signal: AbortSignal.timeout(20000) });
+    const json = await res.json();
+    const rows = json.data || [];
+    if (rows.length === 0) {
+      alert('雲端無資料');
+      btn.textContent = '⬇️ 載雲端'; btn.disabled = false; return;
+    }
+    const validRows = rows.filter(r => r && String(r[2]||'').trim() !== '').map(r => [r[0], r[1], String(r[2])]);
+    const newGroups = DEFAULT_GROUPS.map((n, i) => ({ name: n, stocks: [] }));
+    validRows.forEach(row => {
+      const gi   = parseInt(row[0]);
+      const name = row[1] || DEFAULT_GROUPS[gi];
+      const sid  = String(row[2] || '').trim().toUpperCase();
+      if (gi >= 0 && gi < 5) {
+        newGroups[gi].name = name;
+        if (sid && !newGroups[gi].stocks.find(s => s.id === sid)) {
+          newGroups[gi].stocks.push({ id: sid });
+        }
+      }
+    });
+    groups = newGroups;
+    saveGroups();
+    render();
+    btn.textContent = '✅ 已載入';
+    setTimeout(() => { btn.textContent = '⬇️ 載雲端'; btn.disabled = false; }, 2000);
+    autoScanAll();
+  } catch(e) {
+    btn.textContent = '❌ ' + (e.message||'失敗'); btn.disabled = false;
+    console.error('loadCloud error:', e);
+    setTimeout(() => { btn.textContent = '⬇️ 載雲端'; btn.disabled = false; }, 4000);
+  }
+}
+
+// ── 自動掃描（開啟頁面時執行）────────────────────────
+async function autoScanAll() {
+  for (let i = 0; i < groups.length; i++) {
+    if (groups[i].stocks && groups[i].stocks.length > 0) {
+      curGroup = i;
+      render();
+      await scanGroup(i);
+    }
+  }
+  // 掃描完回到第一個有股票的群組
+  curGroup = groups.findIndex(g => g.stocks && g.stocks.length > 0);
+  if (curGroup < 0) curGroup = 0;
+  render();
+}
+
+// ── 啟動 ──────────────────────────────────────────────
 render();
+// 開啟頁面：延遲2秒後從雲端載入（等伺服器冷啟動完成）
+window.addEventListener('load', () => {
+  setTimeout(() => { loadCloud(); }, 2000);
+});
 </script>
 </body>
 </html>"""
 
+
 @app.route('/')
 def home():
     return HTML_PAGE
+
 
 if __name__ == '__main__':
     app.run()

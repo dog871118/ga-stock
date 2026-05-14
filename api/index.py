@@ -6,9 +6,6 @@ import pandas as pd
 app = Flask(__name__)
 CORS(app)
 
-# ────────────────────────────────────────────
-#  訊號計算
-# ────────────────────────────────────────────
 def calc_signal(close_series):
     if len(close_series) < 5:
         return '⬜', '空手', 0
@@ -62,8 +59,6 @@ def resolve_ticker(stock_id):
 def get_signals(stock_id):
     try:
         ticker = resolve_ticker(stock_id)
-
-        # 日線
         df_d = yf.download(ticker, period="60d", auto_adjust=True, progress=False)
         if df_d.empty or len(df_d) < 5:
             return None
@@ -71,14 +66,11 @@ def get_signals(stock_id):
             close_d = df_d['Close'].iloc[:, 0].dropna()
         else:
             close_d = df_d['Close'].dropna()
-
         price = round(float(close_d.iloc[-1]), 2)
         ma5   = round(float(close_d.iloc[-5:].mean()),  2) if len(close_d) >= 5  else None
         ma10  = round(float(close_d.iloc[-10:].mean()), 2) if len(close_d) >= 10 else None
-
         d_signal, d_action, d_days = calc_signal(close_d.iloc[-20:])
 
-        # 週線
         df_w = yf.download(ticker, period="60wk", interval="1wk", auto_adjust=True, progress=False)
         if df_w.empty or len(df_w) < 5:
             w_signal, w_action, w_days = '⬜', '空手', 0
@@ -89,7 +81,6 @@ def get_signals(stock_id):
                 close_w = df_w['Close'].dropna()
             w_signal, w_action, w_days = calc_signal(close_w.iloc[-20:])
 
-        # 60分K 240均線
         ma60k240 = None
         try:
             df60 = yf.download(ticker, period="60d", interval="60m", auto_adjust=True, progress=False)
@@ -98,10 +89,8 @@ def get_signals(stock_id):
                     c60 = df60['Close'].iloc[:, 0].dropna()
                 else:
                     c60 = df60['Close'].dropna()
-                if len(c60) >= 240:
-                    ma60k240 = round(float(c60.iloc[-240:].mean()), 2)
-                elif len(c60) >= 20:
-                    ma60k240 = round(float(c60.mean()), 2)
+                if len(c60) >= 20:
+                    ma60k240 = round(float(c60.iloc[-min(240,len(c60)):].mean()), 2)
         except:
             pass
 
@@ -117,9 +106,6 @@ def get_signals(stock_id):
         return None
 
 
-# ────────────────────────────────────────────
-#  API
-# ────────────────────────────────────────────
 @app.route('/api/check', methods=['GET'])
 def check_stock():
     stock_id = request.args.get('id', '').strip().upper()
@@ -171,9 +157,6 @@ def sync_save():
         return jsonify({'error': str(e)}), 500
 
 
-# ────────────────────────────────────────────
-#  前端 HTML
-# ────────────────────────────────────────────
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -182,192 +165,223 @@ HTML_PAGE = """<!DOCTYPE html>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>GA 股票訊號</title>
 <style>
-:root {
-  --bg:      #0d1b2a;
-  --surface: #132338;
-  --card:    #1a2f45;
-  --border:  #1e3a5f;
-  --text:    #e2e8f0;
-  --muted:   #4a6fa5;
-  --accent:  #38bdf8;
-  --green:   #34c759;
-  --yellow:  #ffd60a;
-  --red:     #ff453a;
-  --radius:  10px;
-  --mono:    'Menlo', 'Consolas', monospace;
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body {
+  background: #0d1b2a;
+  color: #e2e8f0;
+  font-family: -apple-system, 'SF Pro Text', sans-serif;
+  min-height: 100vh;
+  font-size: 15px;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; min-height: 100vh; }
 
-/* header */
-.header {
+/* ── header ── */
+.hdr {
   position: sticky; top: 0; z-index: 100;
-  background: rgba(13,27,42,0.95);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border);
-  padding: 10px 14px 8px;
+  background: #0d1b2a;
+  border-bottom: 1px solid #1e3a5f;
+  padding: 10px 14px 0;
 }
-.header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.logo { font-family: var(--mono); font-size: 14px; color: var(--accent); letter-spacing: 2px; font-weight: 700; }
-.top-btns { display: flex; gap: 5px; }
-.top-btn {
-  font-size: 11px; padding: 4px 10px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 14px; color: var(--muted); cursor: pointer; white-space: nowrap;
-  transition: all .15s;
+.hdr-top {
+  display: flex; align-items: center;
+  justify-content: space-between; margin-bottom: 10px;
 }
-.top-btn:hover { border-color: var(--accent); color: var(--accent); }
-.top-btn:disabled { opacity: .5; cursor: default; }
+.logo { font-size: 16px; font-weight: 800; color: #38bdf8; letter-spacing: 1px; }
+.hdr-btns { display: flex; gap: 6px; }
+.hbtn {
+  font-size: 12px; padding: 5px 11px;
+  border: 1px solid #1e3a5f; border-radius: 20px;
+  background: transparent; color: #4a6fa5; cursor: pointer;
+}
+.hbtn:active { background: #132338; }
+.hbtn:disabled { opacity: .4; }
 
 /* tabs */
-.tabs { display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none; padding-bottom: 1px; }
+.tabs {
+  display: flex; gap: 4px;
+  overflow-x: auto; scrollbar-width: none;
+  padding-bottom: 0;
+}
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
-  flex-shrink: 0; padding: 4px 12px; border-radius: 14px; font-size: 12px;
-  border: 1px solid var(--border); background: transparent;
-  color: var(--muted); cursor: pointer; transition: all .15s; white-space: nowrap;
+  flex-shrink: 0;
+  padding: 7px 14px 8px;
+  font-size: 13px; font-weight: 500;
+  color: #4a6fa5; cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap; background: none; border-top: none; border-left: none; border-right: none;
 }
-.tab.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
+.tab.active { color: #38bdf8; border-bottom-color: #38bdf8; font-weight: 700; }
 
-/* main */
-.main { padding: 12px 12px 80px; max-width: 520px; margin: 0 auto; }
+/* ── main ── */
+.main { padding: 12px 0 80px; max-width: 540px; margin: 0 auto; }
 
-/* group header */
-.grp-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.grp-name {
+/* group top bar */
+.grp-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 14px; margin-bottom: 4px;
+}
+.grp-name-inp {
   flex: 1; background: transparent; border: none;
-  border-bottom: 1px dashed var(--border);
-  color: var(--text); font-size: 14px; font-weight: 700;
-  padding: 2px 0; font-family: inherit;
+  color: #e2e8f0; font-size: 15px; font-weight: 700;
+  padding: 4px 0; font-family: inherit;
+  border-bottom: 1px dashed #1e3a5f;
 }
-.grp-name:focus { outline: none; border-bottom-color: var(--accent); }
+.grp-name-inp:focus { outline: none; border-bottom-color: #38bdf8; }
 .scan-btn {
-  padding: 5px 14px; background: var(--accent); color: #000;
-  border: none; border-radius: 14px; font-size: 12px; font-weight: 700;
-  cursor: pointer; white-space: nowrap;
+  padding: 6px 16px; background: #38bdf8; color: #000;
+  border: none; border-radius: 20px; font-size: 13px; font-weight: 700; cursor: pointer;
 }
-.scan-btn:disabled { background: var(--border); color: var(--muted); cursor: default; }
-.update-time { font-size: 10px; color: var(--muted); margin-bottom: 6px; font-family: var(--mono); }
+.scan-btn:disabled { background: #1e3a5f; color: #4a6fa5; cursor: default; }
+.upd-time { font-size: 11px; color: #4a6fa5; padding: 0 14px 8px; font-variant-numeric: tabular-nums; }
 
 /* add row */
-.add-row { display: flex; gap: 6px; margin-bottom: 10px; }
-.add-input {
-  flex: 1; background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 8px 10px;
-  color: var(--text); font-size: 13px; font-family: var(--mono);
+.add-row { display: flex; gap: 8px; padding: 0 14px 10px; }
+.add-inp {
+  flex: 1; background: #132338; border: 1px solid #1e3a5f;
+  border-radius: 10px; padding: 9px 12px;
+  color: #e2e8f0; font-size: 14px;
 }
-.add-input::placeholder { color: var(--muted); }
-.add-input:focus { outline: none; border-color: var(--accent); }
+.add-inp::placeholder { color: #2d5480; }
+.add-inp:focus { outline: none; border-color: #38bdf8; }
 .add-btn {
-  padding: 8px 14px; background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); color: var(--accent); font-size: 16px; cursor: pointer;
-}
-.add-btn:hover { background: var(--accent); color: #000; }
-
-/* 表格標題 */
-.tbl-head {
-  display: grid;
-  grid-template-columns: 52px 58px 1fr 68px 68px 68px 22px;
-  gap: 4px;
-  padding: 4px 10px;
-  font-size: 10px; color: var(--muted);
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 4px;
+  width: 42px; background: #132338; border: 1px solid #1e3a5f;
+  border-radius: 10px; color: #38bdf8; font-size: 22px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
 }
 
-/* card */
-.card {
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: var(--radius); margin-bottom: 6px;
-  display: grid;
-  grid-template-columns: 52px 58px 1fr 68px 68px 68px 22px;
-  gap: 4px;
-  align-items: center;
-  padding: 8px 10px;
-  transition: border-color .15s;
+/* ── 表頭 ── */
+.tbl-hdr {
+  display: flex; align-items: center;
+  padding: 4px 14px 4px;
+  border-bottom: 1px solid #1e3a5f;
+  margin-bottom: 2px;
 }
-.card:hover { border-color: var(--muted); }
-
-.c-id { font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--accent); }
-.c-price { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--text); }
-
-/* signals */
-.sigs { display: flex; flex-direction: column; gap: 3px; }
-.sig-row { display: flex; align-items: center; gap: 4px; }
-.sig-lbl { font-size: 9px; color: var(--muted); width: 14px; font-family: var(--mono); }
-.sig-badge {
-  font-size: 11px; padding: 1px 7px; border-radius: 8px; font-weight: 700;
+.tbl-hdr span {
+  font-size: 11px; color: #2d5480; font-weight: 500;
 }
-.sig-green  { background: rgba(52,199,89,.18);  color: var(--green); }
-.sig-yellow { background: rgba(255,214,10,.15); color: var(--yellow); }
-.sig-red    { background: rgba(255,69,58,.15);  color: var(--red); }
-.sig-gray   { background: rgba(74,111,165,.15); color: var(--muted); }
-.sig-days { font-size: 10px; color: var(--muted); font-family: var(--mono); }
+.col-id    { width: 54px; }
+.col-price { width: 58px; text-align: right; }
+.col-sig   { flex: 1; padding-left: 10px; }
+.col-ma    { width: 62px; text-align: right; }
+.col-del   { width: 28px; }
 
-/* ma values */
-.c-ma {
-  font-family: var(--mono); font-size: 12px; text-align: right;
+/* ── 股票列 ── */
+.row {
+  display: flex; align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid #132338;
 }
-.ma-up   { color: var(--green); }
-.ma-down { color: var(--red); }
-.ma-na   { color: var(--muted); }
+.row:active { background: #132338; }
 
-.del-btn {
-  background: none; border: none; color: var(--muted);
-  cursor: pointer; font-size: 14px; text-align: center; line-height: 1;
+.r-id {
+  width: 54px;
+  font-size: 15px; font-weight: 700; color: #38bdf8;
+  font-variant-numeric: tabular-nums;
 }
-.del-btn:hover { color: var(--red); }
+.r-price {
+  width: 58px; text-align: right;
+  font-size: 16px; font-weight: 600; color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+.r-sigs {
+  flex: 1; padding-left: 10px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.sig-line {
+  display: flex; align-items: baseline; gap: 5px;
+  font-size: 14px; font-weight: 600;
+}
+.sig-lbl { font-size: 11px; color: #2d5480; width: 16px; }
+.sig-txt  { font-size: 14px; font-weight: 700; }
+.sig-days { font-size: 11px; color: #4a6fa5; font-weight: 400; }
+.c-buy  { color: #34c759; }
+.c-hold { color: #ffd60a; }
+.c-sell { color: #ff453a; }
+.c-idle { color: #4a6fa5; }
 
-.loading { padding: 16px; text-align: center; color: var(--muted); font-size: 12px; }
-.empty   { padding: 28px; text-align: center; color: var(--muted); font-size: 12px; line-height: 2; }
+.r-ma {
+  width: 62px; text-align: right;
+  font-size: 13px; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+}
+.ma-up   { color: #34c759; }
+.ma-dn   { color: #ff453a; }
+.ma-na   { color: #2d5480; }
+.ma-lbl  { font-size: 10px; color: #2d5480; display: block; }
 
-/* history panel */
-.hist-panel {
+.r-del {
+  width: 28px; text-align: right;
+  background: none; border: none;
+  color: #2d5480; font-size: 16px; cursor: pointer; padding: 4px;
+}
+.r-del:active { color: #ff453a; }
+
+/* pending row */
+.row-pending .r-price,
+.row-pending .r-sigs { color: #2d5480; }
+
+/* empty */
+.empty {
+  padding: 40px 14px; text-align: center;
+  color: #2d5480; font-size: 14px; line-height: 2.2;
+}
+
+/* loading */
+.loading {
+  padding: 20px 14px; text-align: center;
+  color: #4a6fa5; font-size: 13px;
+}
+
+/* ── history panel ── */
+.hist-overlay {
   position: fixed; inset: 0; z-index: 200;
-  background: rgba(0,0,0,.65); backdrop-filter: blur(4px);
+  background: rgba(0,0,0,.6);
   display: none; align-items: flex-end;
 }
-.hist-panel.open { display: flex; }
-.hist-inner {
-  width: 100%; max-width: 520px; margin: 0 auto;
-  background: var(--surface); border-radius: 16px 16px 0 0;
-  border: 1px solid var(--border); max-height: 72vh;
-  display: flex; flex-direction: column;
+.hist-overlay.open { display: flex; }
+.hist-sheet {
+  width: 100%; max-width: 540px; margin: 0 auto;
+  background: #132338;
+  border-radius: 18px 18px 0 0;
+  border-top: 1px solid #1e3a5f;
+  max-height: 70vh; display: flex; flex-direction: column;
 }
-.hist-hdr {
-  padding: 14px 16px 8px;
+.hist-top {
   display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 1px solid var(--border);
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid #1e3a5f;
 }
-.hist-title { font-size: 14px; font-weight: 700; }
-.hist-close { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; }
-.hist-body  { overflow-y: auto; padding: 6px 0; }
-.hist-date  { font-size: 10px; font-family: var(--mono); color: var(--accent); padding: 8px 14px 4px; }
-.hist-row   {
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 14px; border-bottom: 1px solid rgba(30,58,95,.4);
-  font-size: 12px;
+.hist-title { font-size: 15px; font-weight: 700; }
+.hist-x { background: none; border: none; color: #4a6fa5; font-size: 22px; cursor: pointer; }
+.hist-list { overflow-y: auto; flex: 1; }
+.h-date { font-size: 11px; color: #38bdf8; padding: 10px 16px 4px; }
+.h-meta { font-size: 11px; color: #2d5480; padding: 0 16px 4px; }
+.h-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 16px; border-bottom: 1px solid #0d1b2a;
+  font-size: 13px;
 }
-.hist-sid   { font-family: var(--mono); color: var(--accent); min-width: 46px; }
-.hist-price { font-family: var(--mono); min-width: 48px; }
-.hist-empty { padding: 20px; text-align: center; color: var(--muted); font-size: 12px; }
-.hist-clear {
-  margin: 6px 14px; padding: 7px; background: none;
-  border: 1px solid var(--border); border-radius: var(--radius);
-  color: var(--muted); cursor: pointer; font-size: 11px; width: calc(100% - 28px);
+.h-id    { color: #38bdf8; width: 46px; font-weight: 600; }
+.h-price { color: #e2e8f0; width: 50px; text-align: right; font-variant-numeric: tabular-nums; }
+.hist-none { padding: 24px; text-align: center; color: #2d5480; font-size: 13px; }
+.hist-clr {
+  margin: 8px 14px; padding: 9px;
+  border: 1px solid #1e3a5f; border-radius: 10px;
+  background: none; color: #4a6fa5; font-size: 12px; cursor: pointer;
+  width: calc(100% - 28px);
 }
-.hist-clear:hover { border-color: var(--red); color: var(--red); }
 </style>
 </head>
 <body>
 
-<div class="header">
-  <div class="header-top">
+<div class="hdr">
+  <div class="hdr-top">
     <div class="logo">GA.STOCK</div>
-    <div class="top-btns">
-      <button class="top-btn" id="btnLoad" onclick="loadCloud()">⬇️ 載雲端</button>
-      <button class="top-btn" id="btnSave" onclick="saveCloud()">☁️ 存雲端</button>
-      <button class="top-btn" id="btnHist" onclick="toggleHist()">📋 歷史</button>
+    <div class="hdr-btns">
+      <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
+      <button class="hbtn" id="btnSave" onclick="saveCloud()">↑ 存雲端</button>
+      <button class="hbtn" onclick="toggleHist()">≡ 歷史</button>
     </div>
   </div>
   <div class="tabs" id="tabs"></div>
@@ -375,299 +389,258 @@ html, body { background: var(--bg); color: var(--text); font-family: -apple-syst
 
 <div class="main" id="main"></div>
 
-<div class="hist-panel" id="histPanel" onclick="closeHistBg(event)">
-  <div class="hist-inner">
-    <div class="hist-hdr">
-      <div class="hist-title">掃描歷史</div>
-      <button class="hist-close" onclick="toggleHist()">×</button>
+<div class="hist-overlay" id="histOverlay" onclick="closeHistBg(event)">
+  <div class="hist-sheet">
+    <div class="hist-top">
+      <span class="hist-title">掃描歷史</span>
+      <button class="hist-x" onclick="toggleHist()">×</button>
     </div>
-    <div class="hist-body" id="histBody"></div>
-    <button class="hist-clear" onclick="clearHist()">🗑 清除歷史</button>
+    <div class="hist-list" id="histList"></div>
+    <button class="hist-clr" onclick="clearHist()">清除所有歷史</button>
   </div>
 </div>
 
 <script>
-const GROUPS_KEY  = 'ga_g_v4';
-const HISTORY_KEY = 'ga_h_v4';
-const DEF_NAMES   = ['短線強勢股','波段持股','觀察名單','自選群組4','自選群組5'];
+const GK = 'ga_g_v5', HK = 'ga_h_v5';
+const DN = ['短線強勢股','波段持股','觀察名單','自選群組4','自選群組5'];
 
-function loadGroups() {
-  try {
-    const d = JSON.parse(localStorage.getItem(GROUPS_KEY));
-    if (d && d.length === 5) return d;
-  } catch(e){}
-  return DEF_NAMES.map(n => ({ name: n, stocks: [] }));
+function lgr() {
+  try { const d=JSON.parse(localStorage.getItem(GK)); if(d&&d.length===5) return d; } catch(e){}
+  return DN.map(n=>({name:n,stocks:[]}));
 }
-function saveGroups() { localStorage.setItem(GROUPS_KEY, JSON.stringify(groups)); }
-function loadHist()   { try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch(e){ return []; } }
-function saveHist(h)  { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); }
+function sgr() { localStorage.setItem(GK,JSON.stringify(groups)); }
+function lhi() { try { return JSON.parse(localStorage.getItem(HK))||[]; } catch(e){ return []; } }
+function shi(h){ localStorage.setItem(HK,JSON.stringify(h)); }
 
-let groups   = loadGroups();
-let curGroup = 0;
+let groups=lgr(), cur=0;
 
-function sigClass(action) {
-  return action==='買進'?'sig-green': action==='持有'?'sig-yellow': action==='賣出'?'sig-red':'sig-gray';
+function sigColor(a){ return a==='買進'?'c-buy':a==='持有'?'c-hold':a==='賣出'?'c-sell':'c-idle'; }
+function maColor(p,m){ if(!m||!p) return 'ma-na'; return p>=m?'ma-up':'ma-dn'; }
+function ts(){
+  const d=new Date();
+  return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
 }
-function maClass(price, ma) {
-  if (!ma || !price) return 'ma-na';
-  return price >= ma ? 'ma-up' : 'ma-down';
-}
-function nowStr() {
-  const d = new Date();
-  return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()
-    +' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
-}
-function dateKey() {
-  const d = new Date();
+function dk(){
+  const d=new Date();
   return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate();
 }
 
-function renderTabs() {
-  document.getElementById('tabs').innerHTML = groups.map((g,i) =>
-    `<button class="tab${i===curGroup?' active':''}" onclick="switchTab(${i})">${g.name}</button>`
+function renderTabs(){
+  document.getElementById('tabs').innerHTML=groups.map((g,i)=>
+    `<button class="tab${i===cur?' active':''}" onclick="sw(${i})">${g.name}</button>`
   ).join('');
 }
 
-function render() {
+function render(){
   renderTabs();
-  const g = groups[curGroup];
-  let html = `
-    <div class="grp-head">
-      <input class="grp-name" value="${g.name}"
-        onchange="renameGroup(${curGroup},this.value)"
-        onblur="renameGroup(${curGroup},this.value)">
-      <button class="scan-btn" id="scanBtn" onclick="scanGroup(${curGroup})">⚡ 掃描</button>
-    </div>
-    <div class="update-time" id="upTime">${g.lastUpdate||''}</div>
-    <div class="add-row">
-      <input class="add-input" id="addInput" placeholder="輸入代號，如 2330 或 3624"
-        onkeydown="if(event.key==='Enter')addStock(${curGroup})">
-      <button class="add-btn" onclick="addStock(${curGroup})">＋</button>
-    </div>
-  `;
+  const g=groups[cur];
+  let h=`
+  <div class="grp-bar">
+    <input class="grp-name-inp" value="${g.name}"
+      onchange="rn(${cur},this.value)" onblur="rn(${cur},this.value)">
+    <button class="scan-btn" id="scanBtn" onclick="scan(${cur})">⚡ 掃描</button>
+  </div>
+  <div class="upd-time" id="upd">${g.lastUpdate||'尚未掃描'}</div>
+  <div class="add-row">
+    <input class="add-inp" id="addInp" placeholder="輸入代號，如 2330、3624"
+      onkeydown="if(event.key==='Enter')add(${cur})">
+    <button class="add-btn" onclick="add(${cur})">＋</button>
+  </div>`;
 
-  if (!g.stocks || g.stocks.length === 0) {
-    html += `<div class="empty">尚無股票<br>輸入代號按 ＋ 新增</div>`;
+  if(!g.stocks||g.stocks.length===0){
+    h+=`<div class="empty">尚無股票<br>輸入代號按 ＋ 新增</div>`;
   } else {
-    html += `<div class="tbl-head">
-      <span>代號</span><span>收盤價</span><span>訊號／天數</span>
-      <span style="text-align:right">60MA240</span>
-      <span style="text-align:right">MA5</span>
-      <span style="text-align:right">MA10</span>
-      <span></span>
+    h+=`<div class="tbl-hdr">
+      <span class="col-id">代號</span>
+      <span class="col-price">收盤價</span>
+      <span class="col-sig">訊號／天數</span>
+      <span class="col-ma">60MA240</span>
+      <span class="col-ma">MA5</span>
+      <span class="col-ma">MA10</span>
+      <span class="col-del"></span>
     </div>`;
-    html += g.stocks.map((s, si) => renderCard(s, curGroup, si)).join('');
+    h+=g.stocks.map((s,si)=>rc(s,cur,si)).join('');
   }
-  document.getElementById('main').innerHTML = html;
+  document.getElementById('main').innerHTML=h;
 }
 
-function renderCard(s, gi, si) {
-  if (!s.daily) {
-    return `<div class="card">
-      <span class="c-id">${s.id}</span>
-      <span class="c-price">—</span>
-      <span style="color:var(--muted);font-size:11px">尚未查詢</span>
-      <span class="c-ma ma-na">—</span>
-      <span class="c-ma ma-na">—</span>
-      <span class="c-ma ma-na">—</span>
-      <button class="del-btn" onclick="removeStock(${gi},${si})">✕</button>
+function rc(s,gi,si){
+  if(!s.daily){
+    return `<div class="row row-pending">
+      <span class="r-id">${s.id}</span>
+      <span class="r-price">—</span>
+      <div class="r-sigs"><span style="color:#2d5480;font-size:13px">尚未查詢</span></div>
+      <span class="r-ma ma-na">—</span>
+      <span class="r-ma ma-na">—</span>
+      <span class="r-ma ma-na">—</span>
+      <button class="r-del" onclick="del(${gi},${si})">×</button>
     </div>`;
   }
-  const d  = s.daily;
-  const w  = s.weekly || {signal:'⬜',action:'空手',days:0};
-  const dDays = d.days > 0 ? `<span class="sig-days">${d.days}天</span>` : '';
-  const wDays = w.days > 0 ? `<span class="sig-days">${w.days}週</span>` : '';
-  const ma60  = s.ma60k240 ? `<span class="c-ma ${maClass(s.price, s.ma60k240)}">${s.ma60k240}</span>` : `<span class="c-ma ma-na">—</span>`;
-  const ma5v  = s.ma5      ? `<span class="c-ma ${maClass(s.price, s.ma5)}">${s.ma5}</span>`           : `<span class="c-ma ma-na">—</span>`;
-  const ma10v = s.ma10     ? `<span class="c-ma ${maClass(s.price, s.ma10)}">${s.ma10}</span>`         : `<span class="c-ma ma-na">—</span>`;
-  return `<div class="card">
-    <span class="c-id">${s.id}</span>
-    <span class="c-price">${s.price}</span>
-    <div class="sigs">
-      <div class="sig-row">
+  const d=s.daily, w=s.weekly||{signal:'⬜',action:'空手',days:0};
+  const dt=d.days>0?`<span class="sig-days">${d.days}天</span>`:'';
+  const wt=w.days>0?`<span class="sig-days">${w.days}週</span>`:'';
+  const m60=s.ma60k240?`<div class="${maColor(s.price,s.ma60k240)}">${s.ma60k240}</div><span class="ma-lbl">60MA240</span>`:`<div class="ma-na">—</div><span class="ma-lbl">60MA240</span>`;
+  const m5 =s.ma5     ?`<div class="${maColor(s.price,s.ma5)}">${s.ma5}</div><span class="ma-lbl">MA5</span>`:`<div class="ma-na">—</div><span class="ma-lbl">MA5</span>`;
+  const m10=s.ma10    ?`<div class="${maColor(s.price,s.ma10)}">${s.ma10}</div><span class="ma-lbl">MA10</span>`:`<div class="ma-na">—</div><span class="ma-lbl">MA10</span>`;
+  return `<div class="row">
+    <span class="r-id">${s.id}</span>
+    <span class="r-price">${s.price}</span>
+    <div class="r-sigs">
+      <div class="sig-line">
         <span class="sig-lbl">日</span>
-        <span class="sig-badge ${sigClass(d.action)}">${d.signal} ${d.action}</span>
-        ${dDays}
+        <span class="sig-txt ${sigColor(d.action)}">${d.signal} ${d.action}</span>
+        ${dt}
       </div>
-      <div class="sig-row">
+      <div class="sig-line">
         <span class="sig-lbl">週</span>
-        <span class="sig-badge ${sigClass(w.action)}">${w.signal} ${w.action}</span>
-        ${wDays}
+        <span class="sig-txt ${sigColor(w.action)}">${w.signal} ${w.action}</span>
+        ${wt}
       </div>
     </div>
-    ${ma60}${ma5v}${ma10v}
-    <button class="del-btn" onclick="removeStock(${gi},${si})">✕</button>
+    <div class="r-ma">${m60}</div>
+    <div class="r-ma">${m5}</div>
+    <div class="r-ma">${m10}</div>
+    <button class="r-del" onclick="del(${gi},${si})">×</button>
   </div>`;
 }
 
-function switchTab(i) { curGroup = i; render(); }
+function sw(i){ cur=i; render(); }
+function rn(gi,v){ groups[gi].name=v.trim()||DN[gi]; sgr(); renderTabs(); }
 
-function renameGroup(gi, val) {
-  groups[gi].name = val.trim() || DEF_NAMES[gi];
-  saveGroups(); renderTabs();
+function add(gi){
+  const inp=document.getElementById('addInp');
+  const id=inp.value.trim().toUpperCase();
+  if(!id) return;
+  if(groups[gi].stocks.find(s=>s.id===id)){alert('已有此代號');return;}
+  groups[gi].stocks.push({id}); sgr(); inp.value=''; render();
 }
 
-function addStock(gi) {
-  const inp = document.getElementById('addInput');
-  const id  = inp.value.trim().toUpperCase();
-  if (!id) return;
-  if (groups[gi].stocks.find(s => s.id === id)) { alert('已有此代號'); return; }
-  groups[gi].stocks.push({ id });
-  saveGroups(); inp.value = ''; render();
-}
+function del(gi,si){ groups[gi].stocks.splice(si,1); sgr(); render(); }
 
-function removeStock(gi, si) {
-  groups[gi].stocks.splice(si, 1);
-  saveGroups(); render();
-}
+async function scan(gi){
+  const stocks=groups[gi].stocks;
+  if(!stocks||stocks.length===0){alert('請先新增股票');return;}
+  const btn=document.getElementById('scanBtn');
+  btn.disabled=true; btn.textContent='查詢中…';
 
-async function scanGroup(gi) {
-  const stocks = groups[gi].stocks;
-  if (!stocks || stocks.length === 0) { alert('請先新增股票'); return; }
-  const btn = document.getElementById('scanBtn');
-  btn.disabled = true; btn.textContent = '查詢中…';
-  document.getElementById('main').querySelector(`#scanBtn`) && null;
-
-  const ids = stocks.map(s => s.id).join(',');
-  try {
-    const res  = await fetch('/api/batch?ids=' + encodeURIComponent(ids));
-    const data = await res.json();
-    const histStocks = [];
-    stocks.forEach(s => {
-      const r = data[s.id];
-      if (r) {
-        s.price    = r.price;
-        s.ma5      = r.ma5;
-        s.ma10     = r.ma10;
-        s.ma60k240 = r.ma60k240;
-        s.daily    = r.daily;
-        s.weekly   = r.weekly;
-        histStocks.push({ id: s.id, price: r.price, daily: r.daily, weekly: r.weekly });
+  // 顯示 loading
+  const tbl=document.getElementById('main');
+  const ids=stocks.map(s=>s.id).join(',');
+  try{
+    const res=await fetch('/api/batch?ids='+encodeURIComponent(ids));
+    const data=await res.json();
+    const hs=[];
+    stocks.forEach(s=>{
+      const r=data[s.id];
+      if(r){
+        s.price=r.price; s.ma5=r.ma5; s.ma10=r.ma10;
+        s.ma60k240=r.ma60k240; s.daily=r.daily; s.weekly=r.weekly;
+        hs.push({id:s.id,price:r.price,daily:r.daily,weekly:r.weekly});
       }
     });
-    if (histStocks.length > 0) {
-      const hist    = loadHist();
-      const today   = dateKey();
-      let dayEntry  = hist.find(h => h.date === today);
-      if (!dayEntry) { dayEntry = { date: today, scans: [] }; hist.unshift(dayEntry); }
-      dayEntry.scans.unshift({ time: nowStr(), group: groups[gi].name, stocks: histStocks });
-      if (hist.length > 30) hist.splice(30);
-      saveHist(hist);
+    if(hs.length>0){
+      const hist=lhi(), today=dk();
+      let de=hist.find(h=>h.date===today);
+      if(!de){de={date:today,scans:[]};hist.unshift(de);}
+      de.scans.unshift({time:ts(),group:groups[gi].name,stocks:hs});
+      if(hist.length>30) hist.splice(30);
+      shi(hist);
     }
-    groups[gi].lastUpdate = '更新：' + nowStr();
-    saveGroups();
-  } catch(e) { alert('連線失敗，請稍後再試'); }
-  btn.disabled = false; btn.textContent = '⚡ 掃描';
+    groups[gi].lastUpdate='更新：'+ts(); sgr();
+  }catch(e){alert('連線失敗，請稍後再試');}
+  btn.disabled=false; btn.textContent='⚡ 掃描';
   render();
 }
 
-async function autoScanAll() {
-  for (let i = 0; i < groups.length; i++) {
-    if (groups[i].stocks && groups[i].stocks.length > 0) {
-      curGroup = i; render();
-      await scanGroup(i);
+async function autoScan(){
+  for(let i=0;i<groups.length;i++){
+    if(groups[i].stocks&&groups[i].stocks.length>0){
+      cur=i; render(); await scan(i);
     }
   }
-  curGroup = groups.findIndex(g => g.stocks && g.stocks.length > 0);
-  if (curGroup < 0) curGroup = 0;
-  render();
+  cur=groups.findIndex(g=>g.stocks&&g.stocks.length>0);
+  if(cur<0) cur=0; render();
 }
 
-async function saveCloud() {
-  const btn = document.getElementById('btnSave');
-  btn.textContent = '儲存中…'; btn.disabled = true;
-  const rows = [];
-  groups.forEach((g, gi) => {
-    if (g.stocks && g.stocks.length > 0) {
-      g.stocks.forEach(s => rows.push([gi, g.name, s.id]));
-    } else {
-      rows.push([gi, g.name, '']);
-    }
+async function saveCloud(){
+  const btn=document.getElementById('btnSave');
+  btn.textContent='儲存中…'; btn.disabled=true;
+  const rows=[];
+  groups.forEach((g,gi)=>{
+    if(g.stocks&&g.stocks.length>0) g.stocks.forEach(s=>rows.push([gi,g.name,s.id]));
+    else rows.push([gi,g.name,'']);
   });
-  try {
-    const res  = await fetch('/api/sync-save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ payload: rows })
+  try{
+    const res=await fetch('/api/sync-save',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({payload:rows})
     });
-    const json = await res.json();
-    btn.textContent = json.ok ? '✅ 已儲存' : '❌ 失敗';
-  } catch(e) { btn.textContent = '❌ 失敗'; }
-  setTimeout(() => { btn.textContent = '☁️ 存雲端'; btn.disabled = false; }, 2000);
+    const j=await res.json();
+    btn.textContent=j.ok?'✓ 已儲存':'✗ 失敗';
+  }catch(e){btn.textContent='✗ 失敗';}
+  setTimeout(()=>{btn.textContent='↑ 存雲端';btn.disabled=false;},2000);
 }
 
-async function loadCloud() {
-  const btn = document.getElementById('btnLoad');
-  btn.textContent = '載入中…'; btn.disabled = true;
-  try {
-    const res  = await fetch('/api/sync-load', { signal: AbortSignal.timeout(20000) });
-    const json = await res.json();
-    const rows = json.data || [];
-    if (rows.length === 0) { alert('雲端無資料'); btn.textContent = '⬇️ 載雲端'; btn.disabled = false; return; }
-    const validRows = rows.filter(r => r && String(r[2]||'').trim() !== '');
-    const newGroups = DEF_NAMES.map((n, i) => ({ name: n, stocks: [] }));
-    validRows.forEach(row => {
-      const gi  = parseInt(row[0]);
-      const nm  = row[1] || DEF_NAMES[gi];
-      const sid = String(row[2]||'').trim().toUpperCase();
-      if (gi >= 0 && gi < 5) {
-        newGroups[gi].name = nm;
-        if (sid && !newGroups[gi].stocks.find(s => s.id === sid)) {
-          newGroups[gi].stocks.push({ id: sid });
-        }
+async function loadCloud(){
+  const btn=document.getElementById('btnLoad');
+  btn.textContent='載入中…'; btn.disabled=true;
+  try{
+    const res=await fetch('/api/sync-load',{signal:AbortSignal.timeout(20000)});
+    const j=await res.json();
+    const rows=j.data||[];
+    if(rows.length===0){alert('雲端無資料');btn.textContent='⬇ 載雲端';btn.disabled=false;return;}
+    const vr=rows.filter(r=>r&&String(r[2]||'').trim()!=='');
+    const ng=DN.map((n,i)=>({name:n,stocks:[]}));
+    vr.forEach(row=>{
+      const gi=parseInt(row[0]), nm=row[1]||DN[gi], sid=String(row[2]||'').trim().toUpperCase();
+      if(gi>=0&&gi<5){
+        ng[gi].name=nm;
+        if(sid&&!ng[gi].stocks.find(s=>s.id===sid)) ng[gi].stocks.push({id:sid});
       }
     });
-    groups = newGroups;
-    saveGroups(); render();
-    btn.textContent = '✅ 已載入';
-    setTimeout(() => { btn.textContent = '⬇️ 載雲端'; btn.disabled = false; }, 1500);
-    autoScanAll();
-  } catch(e) {
-    btn.textContent = '❌ ' + (e.message||'失敗'); btn.disabled = false;
-    setTimeout(() => { btn.textContent = '⬇️ 載雲端'; btn.disabled = false; }, 3000);
+    groups=ng; sgr(); render();
+    btn.textContent='✓ 已載入';
+    setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},1500);
+    autoScan();
+  }catch(e){
+    btn.textContent='✗ '+(e.message||'失敗'); btn.disabled=false;
+    setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},3000);
   }
 }
 
-function toggleHist() {
-  const p = document.getElementById('histPanel');
-  p.classList.toggle('open');
-  if (p.classList.contains('open')) renderHistPanel();
+function toggleHist(){
+  const o=document.getElementById('histOverlay');
+  o.classList.toggle('open');
+  if(o.classList.contains('open')) renderHist();
 }
-function closeHistBg(e) { if (e.target === document.getElementById('histPanel')) toggleHist(); }
+function closeHistBg(e){if(e.target===document.getElementById('histOverlay'))toggleHist();}
 
-function renderHistPanel() {
-  const hist = loadHist();
-  const body = document.getElementById('histBody');
-  if (!hist || hist.length === 0) { body.innerHTML = '<div class="hist-empty">尚無歷史紀錄</div>'; return; }
-  let html = '';
-  hist.forEach(day => {
-    html += `<div class="hist-date">📅 ${day.date}</div>`;
-    day.scans.forEach(scan => {
-      html += `<div style="font-size:10px;color:var(--muted);padding:2px 14px;font-family:var(--mono)">${scan.time} · ${scan.group}</div>`;
-      scan.stocks.forEach(s => {
-        const d = s.daily||{}, w = s.weekly||{};
-        html += `<div class="hist-row">
-          <span class="hist-sid">${s.id}</span>
-          <span class="hist-price">${s.price}</span>
-          <span class="sig-badge ${sigClass(d.action)}" style="font-size:10px">${d.signal} 日${d.action||''}</span>
-          <span class="sig-badge ${sigClass(w.action)}" style="font-size:10px">${w.signal} 週${w.action||''}</span>
+function renderHist(){
+  const hist=lhi(), el=document.getElementById('histList');
+  if(!hist||hist.length===0){el.innerHTML='<div class="hist-none">尚無歷史紀錄</div>';return;}
+  let h='';
+  hist.forEach(day=>{
+    h+=`<div class="h-date">📅 ${day.date}</div>`;
+    day.scans.forEach(sc=>{
+      h+=`<div class="h-meta">${sc.time} · ${sc.group}</div>`;
+      sc.stocks.forEach(s=>{
+        const d=s.daily||{}, w=s.weekly||{};
+        h+=`<div class="h-row">
+          <span class="h-id">${s.id}</span>
+          <span class="h-price">${s.price}</span>
+          <span class="${sigColor(d.action)}" style="font-size:13px">${d.signal} 日${d.action||''}</span>
+          <span class="${sigColor(w.action)}" style="font-size:13px">${w.signal} 週${w.action||''}</span>
         </div>`;
       });
     });
   });
-  body.innerHTML = html;
+  el.innerHTML=h;
 }
 
-function clearHist() {
-  if (!confirm('確定清除所有歷史？')) return;
-  saveHist([]); renderHistPanel();
-}
+function clearHist(){if(!confirm('確定清除所有歷史？'))return;shi([]);renderHist();}
 
-// 啟動
 render();
-window.addEventListener('load', () => {
-  setTimeout(() => loadCloud(), 2000);
-});
+window.addEventListener('load',()=>{ setTimeout(()=>loadCloud(),2000); });
 </script>
 </body>
 </html>"""

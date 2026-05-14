@@ -100,13 +100,23 @@ def get_signals(stock_id):
             close_d = df_d['Close'].iloc[:, 0].dropna()
         else:
             close_d = df_d['Close'].dropna()
-        # 台股13:30收盤前，去掉今天未收盤的K棒
-        from datetime import datetime
+        # 台股週一~五 09:00~13:30為交易時間
+        # 盤中（且最後一筆是今天）才去掉未收盤K棒
+        from datetime import datetime, date
         import pytz
         now_tw = datetime.now(pytz.timezone('Asia/Taipei'))
-        if not ((now_tw.hour > 13) or (now_tw.hour == 13 and now_tw.minute >= 30)):
-            if len(close_d) > 1:
-                close_d = close_d.iloc[:-1]
+        today_tw = now_tw.date()
+        last_date = close_d.index[-1]
+        if hasattr(last_date, 'date'):
+            last_date = last_date.date()
+        is_today = (last_date == today_tw)
+        is_trading = (now_tw.weekday() < 5) and (
+            (now_tw.hour == 9 and now_tw.minute >= 0) or
+            (9 < now_tw.hour < 13) or
+            (now_tw.hour == 13 and now_tw.minute < 30)
+        )
+        if is_today and is_trading and len(close_d) > 1:
+            close_d = close_d.iloc[:-1]
 
         price = round(float(close_d.iloc[-1]), 2)
         ma5   = round(float(close_d.iloc[-5:].mean()),  2) if len(close_d) >= 5  else None

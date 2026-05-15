@@ -288,7 +288,7 @@ html, body {
 .r-name { font-size: 14px; color: #ffd60a; white-space: nowrap; }
 .r-price {
   width: 56px; text-align: right;
-  font-size: 16px; font-weight: 600; color: #ffffff;
+  font-size: 16px; font-weight: 600; color: #ffd60a;
   font-variant-numeric: tabular-nums;
 }
 .r-mid { flex: 1; padding-left: 10px; display: flex; flex-direction: column; gap: 4px; }

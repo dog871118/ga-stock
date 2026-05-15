@@ -255,7 +255,7 @@ html, body {
   border: none; border-radius: 20px; font-size: 13px; font-weight: 700; cursor: pointer;
 }
 .scan-btn:disabled { background: #1e3a5f; color: #ffffff; cursor: default; }
-.upd-time { font-size: 12px; color: #ffb3c6; padding: 0 14px 8px; }
+.upd-time { font-size: 12px; color: #38bdf8; padding: 0 14px 8px; }
 .add-row { display: flex; gap: 8px; padding: 0 14px 10px; }
 .add-inp {
   flex: 1; background: #132338; border: 1px solid #1e3a5f;
@@ -273,7 +273,7 @@ html, body {
   display: flex; align-items: center;
   padding: 4px 14px; border-bottom: 1px solid #1e3a5f; margin-bottom: 2px;
 }
-.tbl-hdr span { font-size: 12px; color: #ffb3c6; }
+.tbl-hdr span { font-size: 12px; color: #38bdf8; }
 .col-id    { width: 70px; }
 .col-price { width: 56px; text-align: right; }
 .col-sig   { flex: 1; padding-left: 10px; }
@@ -285,7 +285,7 @@ html, body {
 .row:active { background: #132338; }
 .r-id-wrap { width: 70px; display: flex; flex-direction: column; gap: 2px; }
 .r-id { font-size: 16px; font-weight: 700; color: #38bdf8; font-variant-numeric: tabular-nums; }
-.r-name { font-size: 14px; color: #ffffff; white-space: nowrap; }
+.r-name { font-size: 14px; color: #ffd60a; white-space: nowrap; }
 .r-price {
   width: 56px; text-align: right;
   font-size: 16px; font-weight: 600; color: #ffffff;
@@ -293,13 +293,13 @@ html, body {
 }
 .r-mid { flex: 1; padding-left: 10px; display: flex; flex-direction: column; gap: 4px; }
 .sig-line { display: flex; align-items: baseline; gap: 5px; }
-.sig-lbl  { font-size: 13px; color: #ffb3c6; width: 16px; flex-shrink: 0; }
+.sig-lbl  { font-size: 13px; color: #38bdf8; width: 16px; flex-shrink: 0; }
 .sig-txt  { font-size: 15px; font-weight: 700; }
 .sig-days { font-size: 13px; color: #ff9f0a; font-weight: 600; }
 .ma-row   { display: flex; gap: 10px; }
 .ma-item  { display: flex; flex-direction: column; align-items: flex-start; }
 .ma-val   { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.ma-lbl   { font-size: 11px; color: #ffb3c6; }
+.ma-lbl   { font-size: 11px; color: #38bdf8; }
 .c-buy  { color: #34c759; }
 .c-hold { color: #ffd60a; }
 .c-sell { color: #ff453a; }

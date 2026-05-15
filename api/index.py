@@ -121,8 +121,18 @@ def get_signals(stock_id):
         except:
             pass
 
+        # 抓股名
+        stock_name = ''
+        try:
+            sid = stock_id.replace('.TW','').replace('.TWO','')
+            if twstock and sid in twstock.codes:
+                stock_name = twstock.codes[sid].name
+        except:
+            pass
+
         return {
             'price':    price,
+            'name':     stock_name,
             'ma5':      ma5,
             'ma10':     ma10,
             'ma60k240': ma60k240,
@@ -159,6 +169,10 @@ def batch_check():
 
 
 import requests as http_requests
+try:
+    import twstock
+except:
+    twstock = None
 import json as _json
 
 GAS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyD6DnxV3p7j7M2PZzGarqSOBobpADkAsbVV497-YXD-FkWiyfRr55kFie2yw0B4_U8Ow/exec"
@@ -298,11 +312,13 @@ html, body {
 }
 .row:active { background: #132338; }
 
+.r-id-wrap { width: 52px; display: flex; flex-direction: column; gap: 1px; }
 .r-id {
   width: 52px;
   font-size: 16px; font-weight: 700; color: #38bdf8;
   font-variant-numeric: tabular-nums;
 }
+.r-name { font-size: 11px; color: #7aa8d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52px; }
 .r-price {
   width: 56px; text-align: right;
   font-size: 16px; font-weight: 600; color: #e2e8f0;
@@ -339,7 +355,8 @@ html, body {
   align-self: flex-start; margin-top: 2px;
 }
 .r-del:active { color: #ff453a; }
-.row-pending .r-price { color: #2d5480; }
+.row-pending .r-name { font-size: 11px; color: #7aa8d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52px; }
+.r-price { color: #2d5480; }
 
 /* empty */
 .empty {
@@ -497,7 +514,10 @@ function rc(s,gi,si){
     ?`<div class="ma-item"><span class="ma-val ${maColor(p,val)}">${val}</span><span class="ma-lbl">${lbl}</span></div>`
     :`<div class="ma-item"><span class="ma-val ma-na">—</span><span class="ma-lbl">${lbl}</span></div>`;
   return `<div class="row">
-    <span class="r-id">${s.id}</span>
+    <div class="r-id-wrap">
+      <span class="r-id">${s.id}</span>
+      ${s.name?`<span class="r-name">${s.name}</span>`:''}
+    </div>
     <span class="r-price">${s.price}</span>
     <div class="r-mid">
       <div class="sig-line">
@@ -551,6 +571,7 @@ async function scan(gi){
       if(r){
         s.price=r.price; s.ma5=r.ma5; s.ma10=r.ma10;
         s.ma60k240=r.ma60k240; s.daily=r.daily; s.weekly=r.weekly;
+        s.name=r.name||'';
         hs.push({id:s.id,price:r.price,daily:r.daily,weekly:r.weekly});
       }
     });

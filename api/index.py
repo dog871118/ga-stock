@@ -214,140 +214,99 @@ html, body {
   min-height: 100vh;
   font-size: 15px;
 }
-
-/* ── header ── */
 .hdr {
   position: sticky; top: 0; z-index: 100;
   background: #0d1b2a;
   border-bottom: 1px solid #1e3a5f;
   padding: 10px 14px 0;
 }
-.hdr-top {
-  display: flex; align-items: center;
-  justify-content: space-between; margin-bottom: 10px;
-}
+.hdr-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .logo { font-size: 16px; font-weight: 800; color: #38bdf8; letter-spacing: 1px; }
 .hdr-btns { display: flex; gap: 6px; }
 .hbtn {
   font-size: 12px; padding: 5px 11px;
-  border: 1px solid #1e3a5f; border-radius: 20px;
-  background: transparent; color: #4a6fa5; cursor: pointer;
+  border: 1px solid #2d5480; border-radius: 20px;
+  background: transparent; color: #ffffff; cursor: pointer;
 }
-.hbtn:active { background: #132338; }
+.hbtn:active { background: #1e3a5f; }
 .hbtn:disabled { opacity: .4; }
-
-/* tabs */
-.tabs {
-  display: flex; gap: 4px;
-  overflow-x: auto; scrollbar-width: none;
-  padding-bottom: 0;
-}
+.tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding-bottom: 0; }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
-  flex-shrink: 0;
-  padding: 7px 14px 8px;
+  flex-shrink: 0; padding: 7px 14px 8px;
   font-size: 13px; font-weight: 500;
-  color: #4a6fa5; cursor: pointer;
+  color: #7aa8d0; cursor: pointer;
   border-bottom: 2px solid transparent;
-  white-space: nowrap; background: none; border-top: none; border-left: none; border-right: none;
+  white-space: nowrap; background: none;
+  border-top: none; border-left: none; border-right: none;
 }
 .tab.active { color: #38bdf8; border-bottom-color: #38bdf8; font-weight: 700; }
-
-/* ── main ── */
 .main { padding: 12px 0 80px; max-width: 540px; margin: 0 auto; }
-
-/* group top bar */
-.grp-bar {
-  display: flex; align-items: center; gap: 8px;
-  padding: 0 14px; margin-bottom: 4px;
-}
+.grp-bar { display: flex; align-items: center; gap: 8px; padding: 0 14px; margin-bottom: 4px; }
 .grp-name-inp {
   flex: 1; background: transparent; border: none;
   color: #ffffff; font-size: 16px; font-weight: 700;
   padding: 4px 0; font-family: inherit;
-  border-bottom: 1px dashed #1e3a5f;
+  border-bottom: 1px dashed #2d5480;
 }
 .grp-name-inp:focus { outline: none; border-bottom-color: #38bdf8; }
 .scan-btn {
   padding: 6px 16px; background: #38bdf8; color: #000;
   border: none; border-radius: 20px; font-size: 13px; font-weight: 700; cursor: pointer;
 }
-.scan-btn:disabled { background: #1e3a5f; color: #4a6fa5; cursor: default; }
-.upd-time { font-size: 11px; color: #a0b4c8; padding: 0 14px 8px; font-variant-numeric: tabular-nums; }
-
-/* add row */
+.scan-btn:disabled { background: #1e3a5f; color: #7aa8d0; cursor: default; }
+.upd-time { font-size: 12px; color: #7aa8d0; padding: 0 14px 8px; }
 .add-row { display: flex; gap: 8px; padding: 0 14px 10px; }
 .add-inp {
   flex: 1; background: #132338; border: 1px solid #1e3a5f;
   border-radius: 10px; padding: 9px 12px;
   color: #ffffff; font-size: 14px;
 }
-.add-inp::placeholder { color: #2d5480; }
+.add-inp::placeholder { color: #4a6fa5; }
 .add-inp:focus { outline: none; border-color: #38bdf8; }
 .add-btn {
   width: 42px; background: #132338; border: 1px solid #1e3a5f;
   border-radius: 10px; color: #38bdf8; font-size: 22px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
-
-/* ── 表頭 ── */
 .tbl-hdr {
   display: flex; align-items: center;
-  padding: 4px 14px;
-  border-bottom: 1px solid #1e3a5f;
-  margin-bottom: 2px;
+  padding: 4px 14px; border-bottom: 1px solid #1e3a5f; margin-bottom: 2px;
 }
-.tbl-hdr span { font-size: 12px; color: #a0b4c8; }
+.tbl-hdr span { font-size: 12px; color: #7aa8d0; }
 .col-id    { width: 70px; }
 .col-price { width: 56px; text-align: right; }
 .col-sig   { flex: 1; padding-left: 10px; }
-.col-mas   { width: 150px; display: flex; justify-content: flex-end; gap: 0; }
 .col-del   { width: 24px; }
-
-/* ── 股票列 ── */
 .row {
   display: flex; align-items: center;
-  padding: 11px 14px;
-  border-bottom: 1px solid #132338;
+  padding: 11px 14px; border-bottom: 1px solid #132338;
 }
 .row:active { background: #132338; }
-
 .r-id-wrap { width: 70px; display: flex; flex-direction: column; gap: 2px; }
-.r-id {
-  width: 70px;
-  font-size: 16px; font-weight: 700; color: #38bdf8;
-  font-variant-numeric: tabular-nums;
-}
-.r-name { font-size: 15px; color: #a0b4c8; white-space: nowrap; }
+.r-id { font-size: 16px; font-weight: 700; color: #38bdf8; font-variant-numeric: tabular-nums; }
+.r-name { font-size: 14px; color: #a0c4e0; white-space: nowrap; }
 .r-price {
   width: 56px; text-align: right;
   font-size: 16px; font-weight: 600; color: #ffffff;
   font-variant-numeric: tabular-nums;
 }
-.r-mid {
-  flex: 1; padding-left: 10px;
-  display: flex; flex-direction: column; gap: 4px;
-}
-.sig-line {
-  display: flex; align-items: baseline; gap: 5px;
-}
-.sig-lbl  { font-size: 13px; color: #a0b4c8; width: 16px; flex-shrink: 0; font-weight: 600; }
+.r-mid { flex: 1; padding-left: 10px; display: flex; flex-direction: column; gap: 4px; }
+.sig-line { display: flex; align-items: baseline; gap: 5px; }
+.sig-lbl  { font-size: 13px; color: #7aa8d0; width: 16px; flex-shrink: 0; }
 .sig-txt  { font-size: 15px; font-weight: 700; }
 .sig-days { font-size: 13px; color: #ff9f0a; font-weight: 600; }
-.ma-row {
-  display: flex; gap: 10px;
-}
-.ma-item { display: flex; flex-direction: column; align-items: flex-start; }
-.ma-val  { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.ma-lbl  { font-size: 11px; color: #a0b4c8; }
+.ma-row   { display: flex; gap: 10px; }
+.ma-item  { display: flex; flex-direction: column; align-items: flex-start; }
+.ma-val   { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ma-lbl   { font-size: 11px; color: #7aa8d0; }
 .c-buy  { color: #34c759; }
 .c-hold { color: #ffd60a; }
 .c-sell { color: #ff453a; }
-.c-idle { color: #c0ccd8; }
+.c-idle { color: #c0d0e0; }
 .ma-up  { color: #34c759; }
 .ma-dn  { color: #ff453a; }
-.ma-na  { color: #2d5480; }
-
+.ma-na  { color: #7aa8d0; }
 .r-del {
   width: 24px; text-align: right;
   background: none; border: none;
@@ -355,22 +314,8 @@ html, body {
   align-self: flex-start; margin-top: 2px;
 }
 .r-del:active { color: #ff453a; }
-.row-pending .r-name { font-size: 15px; color: #a0b4c8; white-space: nowrap; }
-.r-price { color: #2d5480; }
-
-/* empty */
-.empty {
-  padding: 40px 14px; text-align: center;
-  color: #2d5480; font-size: 14px; line-height: 2.2;
-}
-
-/* loading */
-.loading {
-  padding: 20px 14px; text-align: center;
-  color: #4a6fa5; font-size: 13px;
-}
-
-/* ── history panel ── */
+.empty { padding: 40px 14px; text-align: center; color: #7aa8d0; font-size: 14px; line-height: 2.2; }
+.loading { padding: 20px 14px; text-align: center; color: #7aa8d0; font-size: 13px; }
 .hist-overlay {
   position: fixed; inset: 0; z-index: 200;
   background: rgba(0,0,0,.6);
@@ -379,33 +324,30 @@ html, body {
 .hist-overlay.open { display: flex; }
 .hist-sheet {
   width: 100%; max-width: 540px; margin: 0 auto;
-  background: #132338;
-  border-radius: 18px 18px 0 0;
+  background: #132338; border-radius: 18px 18px 0 0;
   border-top: 1px solid #1e3a5f;
   max-height: 70vh; display: flex; flex-direction: column;
 }
 .hist-top {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 16px 10px;
-  border-bottom: 1px solid #1e3a5f;
+  padding: 14px 16px 10px; border-bottom: 1px solid #1e3a5f;
 }
-.hist-title { font-size: 15px; font-weight: 700; }
-.hist-x { background: none; border: none; color: #4a6fa5; font-size: 22px; cursor: pointer; }
+.hist-title { font-size: 15px; font-weight: 700; color: #ffffff; }
+.hist-x { background: none; border: none; color: #7aa8d0; font-size: 22px; cursor: pointer; }
 .hist-list { overflow-y: auto; flex: 1; }
 .h-date { font-size: 11px; color: #38bdf8; padding: 10px 16px 4px; }
-.h-meta { font-size: 11px; color: #2d5480; padding: 0 16px 4px; }
+.h-meta { font-size: 11px; color: #7aa8d0; padding: 0 16px 4px; }
 .h-row {
   display: flex; align-items: center; gap: 10px;
-  padding: 6px 16px; border-bottom: 1px solid #0d1b2a;
-  font-size: 13px;
+  padding: 6px 16px; border-bottom: 1px solid #0d1b2a; font-size: 13px;
 }
 .h-id    { color: #38bdf8; width: 46px; font-weight: 600; }
 .h-price { color: #ffffff; width: 50px; text-align: right; font-variant-numeric: tabular-nums; }
-.hist-none { padding: 24px; text-align: center; color: #2d5480; font-size: 13px; }
+.hist-none { padding: 24px; text-align: center; color: #7aa8d0; font-size: 13px; }
 .hist-clr {
   margin: 8px 14px; padding: 9px;
   border: 1px solid #1e3a5f; border-radius: 10px;
-  background: none; color: #4a6fa5; font-size: 12px; cursor: pointer;
+  background: none; color: #7aa8d0; font-size: 12px; cursor: pointer;
   width: calc(100% - 28px);
 }
 </style>
@@ -503,7 +445,7 @@ function rc(s,gi,si){
     return `<div class="row row-pending">
       <span class="r-id">${s.id}</span>
       <span class="r-price">—</span>
-      <div class="r-mid"><span style="color:#2d5480;font-size:13px">尚未查詢</span></div>
+      <div class="r-mid"><span style="color:#a0b4c8;font-size:13px">尚未查詢</span></div>
       <button class="r-del" onclick="del(${gi},${si})">×</button>
     </div>`;
   }

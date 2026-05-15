@@ -209,7 +209,7 @@ HTML_PAGE = """<!DOCTYPE html>
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html, body {
   background: #0d1b2a;
-  color: #e2e8f0;
+  color: #ffffff;
   font-family: -apple-system, 'SF Pro Text', sans-serif;
   min-height: 100vh;
   font-size: 15px;
@@ -273,14 +273,14 @@ html, body {
   border: none; border-radius: 20px; font-size: 13px; font-weight: 700; cursor: pointer;
 }
 .scan-btn:disabled { background: #1e3a5f; color: #4a6fa5; cursor: default; }
-.upd-time { font-size: 11px; color: #4a6fa5; padding: 0 14px 8px; font-variant-numeric: tabular-nums; }
+.upd-time { font-size: 11px; color: #a0b4c8; padding: 0 14px 8px; font-variant-numeric: tabular-nums; }
 
 /* add row */
 .add-row { display: flex; gap: 8px; padding: 0 14px 10px; }
 .add-inp {
   flex: 1; background: #132338; border: 1px solid #1e3a5f;
   border-radius: 10px; padding: 9px 12px;
-  color: #e2e8f0; font-size: 14px;
+  color: #ffffff; font-size: 14px;
 }
 .add-inp::placeholder { color: #2d5480; }
 .add-inp:focus { outline: none; border-color: #38bdf8; }
@@ -297,7 +297,7 @@ html, body {
   border-bottom: 1px solid #1e3a5f;
   margin-bottom: 2px;
 }
-.tbl-hdr span { font-size: 11px; color: #7aa8d0; }
+.tbl-hdr span { font-size: 12px; color: #a0b4c8; }
 .col-id    { width: 70px; }
 .col-price { width: 56px; text-align: right; }
 .col-sig   { flex: 1; padding-left: 10px; }
@@ -318,7 +318,7 @@ html, body {
   font-size: 16px; font-weight: 700; color: #38bdf8;
   font-variant-numeric: tabular-nums;
 }
-.r-name { font-size: 15px; color: #7aa8d0; white-space: nowrap; }
+.r-name { font-size: 15px; color: #a0b4c8; white-space: nowrap; }
 .r-price {
   width: 56px; text-align: right;
   font-size: 16px; font-weight: 600; color: #ffffff;
@@ -331,19 +331,19 @@ html, body {
 .sig-line {
   display: flex; align-items: baseline; gap: 5px;
 }
-.sig-lbl  { font-size: 12px; color: #7aa8d0; width: 16px; flex-shrink: 0; font-weight: 600; }
+.sig-lbl  { font-size: 13px; color: #a0b4c8; width: 16px; flex-shrink: 0; font-weight: 600; }
 .sig-txt  { font-size: 15px; font-weight: 700; }
-.sig-days { font-size: 11px; color: #ff9f0a; font-weight: 600; }
+.sig-days { font-size: 13px; color: #ff9f0a; font-weight: 600; }
 .ma-row {
   display: flex; gap: 10px;
 }
 .ma-item { display: flex; flex-direction: column; align-items: flex-start; }
 .ma-val  { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.ma-lbl  { font-size: 10px; color: #7aa8d0; }
+.ma-lbl  { font-size: 11px; color: #a0b4c8; }
 .c-buy  { color: #34c759; }
 .c-hold { color: #ffd60a; }
 .c-sell { color: #ff453a; }
-.c-idle { color: #94a3b8; }
+.c-idle { color: #c0ccd8; }
 .ma-up  { color: #34c759; }
 .ma-dn  { color: #ff453a; }
 .ma-na  { color: #2d5480; }
@@ -351,11 +351,11 @@ html, body {
 .r-del {
   width: 24px; text-align: right;
   background: none; border: none;
-  color: #2d5480; font-size: 16px; cursor: pointer; padding: 2px;
+  color: #7aa8d0; font-size: 16px; cursor: pointer; padding: 2px;
   align-self: flex-start; margin-top: 2px;
 }
 .r-del:active { color: #ff453a; }
-.row-pending .r-name { font-size: 15px; color: #7aa8d0; white-space: nowrap; }
+.row-pending .r-name { font-size: 15px; color: #a0b4c8; white-space: nowrap; }
 .r-price { color: #2d5480; }
 
 /* empty */
@@ -400,7 +400,7 @@ html, body {
   font-size: 13px;
 }
 .h-id    { color: #38bdf8; width: 46px; font-weight: 600; }
-.h-price { color: #e2e8f0; width: 50px; text-align: right; font-variant-numeric: tabular-nums; }
+.h-price { color: #ffffff; width: 50px; text-align: right; font-variant-numeric: tabular-nums; }
 .hist-none { padding: 24px; text-align: center; color: #2d5480; font-size: 13px; }
 .hist-clr {
   margin: 8px 14px; padding: 9px;

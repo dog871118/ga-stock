@@ -318,7 +318,7 @@ html, body {
   font-size: 16px; font-weight: 700; color: #38bdf8;
   font-variant-numeric: tabular-nums;
 }
-.r-name { font-size: 11px; color: #7aa8d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52px; }
+.r-name { font-size: 13px; color: #7aa8d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52px; }
 .r-price {
   width: 56px; text-align: right;
   font-size: 16px; font-weight: 600; color: #e2e8f0;
@@ -355,7 +355,7 @@ html, body {
   align-self: flex-start; margin-top: 2px;
 }
 .r-del:active { color: #ff453a; }
-.row-pending .r-name { font-size: 11px; color: #7aa8d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52px; }
+.row-pending .r-name { font-size: 13px; color: #7aa8d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52px; }
 .r-price { color: #2d5480; }
 
 /* empty */

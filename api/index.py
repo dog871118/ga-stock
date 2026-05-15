@@ -298,7 +298,7 @@ html, body {
   margin-bottom: 2px;
 }
 .tbl-hdr span { font-size: 11px; color: #7aa8d0; }
-.col-id    { width: 52px; }
+.col-id    { width: 70px; }
 .col-price { width: 56px; text-align: right; }
 .col-sig   { flex: 1; padding-left: 10px; }
 .col-mas   { width: 150px; display: flex; justify-content: flex-end; gap: 0; }
@@ -312,13 +312,13 @@ html, body {
 }
 .row:active { background: #132338; }
 
-.r-id-wrap { width: 52px; display: flex; flex-direction: column; gap: 1px; }
+.r-id-wrap { width: 70px; display: flex; flex-direction: column; gap: 2px; }
 .r-id {
-  width: 52px;
+  width: 70px;
   font-size: 16px; font-weight: 700; color: #38bdf8;
   font-variant-numeric: tabular-nums;
 }
-.r-name { font-size: 13px; color: #7aa8d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52px; }
+.r-name { font-size: 15px; color: #7aa8d0; white-space: nowrap; }
 .r-price {
   width: 56px; text-align: right;
   font-size: 16px; font-weight: 600; color: #e2e8f0;
@@ -355,7 +355,7 @@ html, body {
   align-self: flex-start; margin-top: 2px;
 }
 .r-del:active { color: #ff453a; }
-.row-pending .r-name { font-size: 13px; color: #7aa8d0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52px; }
+.row-pending .r-name { font-size: 15px; color: #7aa8d0; white-space: nowrap; }
 .r-price { color: #2d5480; }
 
 /* empty */

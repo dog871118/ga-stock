@@ -263,7 +263,7 @@ html, body {
 }
 .grp-name-inp {
   flex: 1; background: transparent; border: none;
-  color: #e2e8f0; font-size: 15px; font-weight: 700;
+  color: #ffffff; font-size: 16px; font-weight: 700;
   padding: 4px 0; font-family: inherit;
   border-bottom: 1px dashed #1e3a5f;
 }
@@ -321,7 +321,7 @@ html, body {
 .r-name { font-size: 15px; color: #7aa8d0; white-space: nowrap; }
 .r-price {
   width: 56px; text-align: right;
-  font-size: 16px; font-weight: 600; color: #e2e8f0;
+  font-size: 16px; font-weight: 600; color: #ffffff;
   font-variant-numeric: tabular-nums;
 }
 .r-mid {

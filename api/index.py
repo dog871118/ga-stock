@@ -130,14 +130,27 @@ def get_signals(stock_id):
         except:
             pass
 
+        # 昨日收盤價
+        prev_price = round(float(close_d.iloc[-2]), 2) if len(close_d) >= 2 else None
+
+        # 接近均線判斷（3%以內）
+        def near(p, ma):
+            if p and ma:
+                return abs(p - ma) / ma <= 0.03
+            return False
+
         return {
-            'price':    price,
-            'name':     stock_name,
-            'ma5':      ma5,
-            'ma10':     ma10,
-            'ma60k240': ma60k240,
-            'daily':    {'signal': d_signal, 'action': d_action, 'days': d_days},
-            'weekly':   {'signal': w_signal, 'action': w_action, 'days': w_days},
+            'price':      price,
+            'prev_price': prev_price,
+            'name':       stock_name,
+            'ma5':        ma5,
+            'ma10':       ma10,
+            'ma60k240':   ma60k240,
+            'near_ma5':   near(price, ma5),
+            'near_ma10':  near(price, ma10),
+            'near_ma60':  near(price, ma60k240),
+            'daily':      {'signal': d_signal, 'action': d_action, 'days': d_days},
+            'weekly':     {'signal': w_signal, 'action': w_action, 'days': w_days},
         }
     except:
         return None
@@ -452,10 +465,12 @@ function rc(s,gi,si){
   const d=s.daily, w=s.weekly||{action:'空手',days:0};
   const dt=d.days>0?`<span class="sig-days">${d.days}天</span>`:'';
   const wt=w.days>0?`<span class="sig-days">${w.days}週</span>`:'';
-  const mv=(val,lbl,p)=>val
-    ?`<div class="ma-item"><span class="ma-val ${maColor(p,val)}">${val}</span><span class="ma-lbl">${lbl}</span></div>`
+  const mv=(val,lbl,p,near)=>val
+    ?`<div class="ma-item"><span class="ma-val ${maColor(p,val)}">${val}${near?' 😊':''}</span><span class="ma-lbl">${lbl}</span></div>`
     :`<div class="ma-item"><span class="ma-val ma-na">—</span><span class="ma-lbl">${lbl}</span></div>`;
-  return `<div class="row">
+  const isHoldingDown = s.daily && s.daily.action==='持有' && s.prev_price && s.price < s.prev_price;
+  const rowStyle = isHoldingDown ? ' style="background:#c0145a;"' : '';
+  return `<div class="row"${rowStyle}>
     <div class="r-id-wrap">
       <span class="r-id">${s.id}</span>
       ${s.name?`<span class="r-name">${s.name}</span>`:''}
@@ -473,9 +488,9 @@ function rc(s,gi,si){
         ${wt}
       </div>
       <div class="ma-row">
-        ${mv(s.ma60k240,'60MA240',s.price)}
-        ${mv(s.ma5,'MA5',s.price)}
-        ${mv(s.ma10,'MA10',s.price)}
+        ${mv(s.ma60k240,'60MA240',s.price,s.near_ma60)}
+        ${mv(s.ma5,'MA5',s.price,s.near_ma5)}
+        ${mv(s.ma10,'MA10',s.price,s.near_ma10)}
       </div>
     </div>
     <button class="r-del" onclick="del(${gi},${si})">×</button>
@@ -511,8 +526,10 @@ async function scan(gi){
     stocks.forEach(s=>{
       const r=data[s.id];
       if(r){
-        s.price=r.price; s.ma5=r.ma5; s.ma10=r.ma10;
-        s.ma60k240=r.ma60k240; s.daily=r.daily; s.weekly=r.weekly;
+        s.price=r.price; s.prev_price=r.prev_price;
+        s.ma5=r.ma5; s.ma10=r.ma10; s.ma60k240=r.ma60k240;
+        s.near_ma5=r.near_ma5; s.near_ma10=r.near_ma10; s.near_ma60=r.near_ma60;
+        s.daily=r.daily; s.weekly=r.weekly;
         s.name=r.name||'';
         hs.push({id:s.id,price:r.price,daily:r.daily,weekly:r.weekly});
       }

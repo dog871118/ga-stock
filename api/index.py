@@ -464,20 +464,22 @@ function renderSpecial(type) {
   renderTabs();
   const title = type==='near' ? '均線買點' : type==='down' ? '回踩買點' : '訊號異動';
   // 收集所有5個群組中符合條件的股票
+  const seen = new Set();
   const matched = [];
   groups.forEach(g => {
     (g.stocks||[]).forEach(s => {
       if (!s.daily) return;
+      if (seen.has(s.id)) return;
       if (type==='near') {
         const hasNear = s.near_ma5||s.near_ma10||s.near_ma20||s.near_ma60d||s.near_ma60;
-        if (hasNear) matched.push(s);
+        if (hasNear) { matched.push(s); seen.add(s.id); }
       } else if (type==='down') {
         const isDown = s.daily.action==='持有' && s.prev_price && s.price < s.prev_price;
-        if (isDown) matched.push(s);
+        if (isDown) { matched.push(s); seen.add(s.id); }
       } else if (type==='change') {
         const prev = getPrevSig(s.id);
         if (prev && prev !== s.daily.action) {
-          matched.push({...s, prevAction: prev});
+          matched.push({...s, prevAction: prev}); seen.add(s.id);
         }
       }
     });
@@ -487,7 +489,7 @@ function renderSpecial(type) {
   <div class="upd-time">掃描前5個群組後自動更新</div>`;
 
   if (matched.length === 0) {
-    h += `<div class="empty">目前無符合條件的股票<br>請先掃描各群組</div>`;
+    h += `<div class="empty">目前無符合條件的股票</div>`;
   } else {
     h += `<div class="tbl-hdr">
       <span class="col-id">代號</span>

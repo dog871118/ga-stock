@@ -1,3 +1,4 @@
+# GA Stock v8 - MA20/MA60/均線買點/回踩買點/訊號異動
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import yfinance as yf

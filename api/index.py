@@ -608,6 +608,8 @@ function del(gi,si){ groups[gi].stocks.splice(si,1); sgr(); render(); }
 async function scan(gi){
   const stocks=groups[gi].stocks;
   if(!stocks||stocks.length===0){alert('請先新增股票');return;}
+  // 掃描前先儲存當前訊號，供比較用
+  saveSigs();
   const btn=document.getElementById('scanBtn');
   btn.disabled=true; btn.textContent='查詢中…';
 

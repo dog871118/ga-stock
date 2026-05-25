@@ -446,11 +446,15 @@ function renderTabs(){
 
 function getPrevSig(id) {
   try {
+    // 優先用掃描前備份，其次用上次掃描結果
+    const pre = JSON.parse(localStorage.getItem(SK+'_pre')||'{}');
+    if (pre[id]) return pre[id];
     const d = JSON.parse(localStorage.getItem(SK)||'{}');
     return d[id] || null;
   } catch(e){ return null; }
 }
 function saveSigs() {
+  // 掃描完成後儲存最新訊號
   const d = {};
   groups.forEach(g => {
     (g.stocks||[]).forEach(s => {
@@ -458,6 +462,20 @@ function saveSigs() {
     });
   });
   localStorage.setItem(SK, JSON.stringify(d));
+}
+function savePreScanSigs() {
+  // 掃描前儲存目前訊號，只在有資料時才儲存
+  const d = JSON.parse(localStorage.getItem(SK)||'{}');
+  const hasData = groups.some(g => (g.stocks||[]).some(s => s.daily));
+  if (hasData) {
+    const pre = {};
+    groups.forEach(g => {
+      (g.stocks||[]).forEach(s => {
+        if (s.daily) pre[s.id] = s.daily.action;
+      });
+    });
+    localStorage.setItem(SK+'_pre', JSON.stringify(pre));
+  }
 }
 
 function renderSpecial(type) {
@@ -608,8 +626,8 @@ function del(gi,si){ groups[gi].stocks.splice(si,1); sgr(); render(); }
 async function scan(gi){
   const stocks=groups[gi].stocks;
   if(!stocks||stocks.length===0){alert('請先新增股票');return;}
-  // 掃描前先儲存當前訊號，供比較用
-  saveSigs();
+  // 掃描前先備份當前訊號
+  savePreScanSigs();
   const btn=document.getElementById('scanBtn');
   btn.disabled=true; btn.textContent='查詢中…';
 

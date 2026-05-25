@@ -100,6 +100,11 @@ def get_signals(stock_id):
         ma20  = round(float(close_d.iloc[-20:].mean()), 2) if len(close_d) >= 20 else None
         ma60d = round(float(close_d.iloc[-60:].mean()), 2) if len(close_d) >= 60 else None
         d_signal, d_action, d_days = calc_signal(close_d.iloc[-20:])
+        # 昨日訊號（用去掉最後一根K棒的資料算）
+        if len(close_d) >= 6:
+            y_signal, y_action, _ = calc_signal(close_d.iloc[-21:-1])
+        else:
+            y_signal, y_action = '', ''
 
         df_w = yf.download(ticker, period="60wk", interval="1wk", auto_adjust=True, progress=False)
         if df_w.empty or len(df_w) < 5:
@@ -157,6 +162,7 @@ def get_signals(stock_id):
             'near_ma60d': near(price, ma60d),
             'near_ma60':  near(price, ma60k240),
             'daily':      {'signal': d_signal, 'action': d_action, 'days': d_days},
+            'yesterday':  {'signal': y_signal, 'action': y_action},
             'weekly':     {'signal': w_signal, 'action': w_action, 'days': w_days},
         }
     except:
@@ -495,7 +501,7 @@ function renderSpecial(type) {
         const isDown = s.daily.action==='持有' && s.prev_price && s.price < s.prev_price;
         if (isDown) { matched.push(s); seen.add(s.id); }
       } else if (type==='change') {
-        const prev = getPrevSig(s.id);
+        const prev = s.yesterday && s.yesterday.action;
         if (prev && prev !== s.daily.action) {
           matched.push({...s, prevAction: prev}); seen.add(s.id);
         }
@@ -645,7 +651,7 @@ async function scan(gi){
         s.ma5=r.ma5; s.ma10=r.ma10; s.ma20=r.ma20; s.ma60d=r.ma60d; s.ma60k240=r.ma60k240;
         s.near_ma5=r.near_ma5; s.near_ma10=r.near_ma10;
         s.near_ma20=r.near_ma20; s.near_ma60d=r.near_ma60d; s.near_ma60=r.near_ma60;
-        s.daily=r.daily; s.weekly=r.weekly;
+        s.daily=r.daily; s.weekly=r.weekly; s.yesterday=r.yesterday;
         s.name=r.name||'';
         hs.push({id:s.id,price:r.price,daily:r.daily,weekly:r.weekly});
       }

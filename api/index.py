@@ -100,11 +100,15 @@ def get_signals(stock_id):
         ma20  = round(float(close_d.iloc[-20:].mean()), 2) if len(close_d) >= 20 else None
         ma60d = round(float(close_d.iloc[-60:].mean()), 2) if len(close_d) >= 60 else None
         d_signal, d_action, d_days = calc_signal(close_d.iloc[-20:])
-        # 昨日訊號（用去掉最後一根K棒的資料算）
+        # 昨日訊號
         if len(close_d) >= 6:
             y_signal, y_action, _ = calc_signal(close_d.iloc[-21:-1])
         else:
             y_signal, y_action = '', ''
+        # 創10日新高
+        new_high_10 = False
+        if len(close_d) >= 10:
+            new_high_10 = float(price) >= float(close_d.iloc[-10:].max())
 
         df_w = yf.download(ticker, period="60wk", interval="1wk", auto_adjust=True, progress=False)
         if df_w.empty or len(df_w) < 5:
@@ -163,6 +167,7 @@ def get_signals(stock_id):
             'near_ma60':  near(price, ma60k240),
             'daily':      {'signal': d_signal, 'action': d_action, 'days': d_days},
             'yesterday':  {'signal': y_signal, 'action': y_action},
+            'new_high_10': new_high_10,
             'weekly':     {'signal': w_signal, 'action': w_action, 'days': w_days},
         }
     except:
@@ -424,6 +429,7 @@ function allGroups() {
     { name:'均線買點', stocks:[], special:'near' },
     { name:'回踩買點', stocks:[], special:'down' },
     { name:'訊號異動', stocks:[], special:'change' },
+    { name:'創新高', stocks:[], special:'newhigh' },
   ];
 }
 function sgr() { localStorage.setItem(GK,JSON.stringify(groups)); }
@@ -484,9 +490,20 @@ function savePreScanSigs() {
   }
 }
 
+function sigOrder(action) {
+  return action==='買進'?0: action==='持有'?1: action==='賣出'?2: 3;
+}
+function sortBySignal(arr) {
+  return arr.slice().sort((a,b) => {
+    const da = a.daily ? sigOrder(a.daily.action) : 4;
+    const db = b.daily ? sigOrder(b.daily.action) : 4;
+    return da - db;
+  });
+}
+
 function renderSpecial(type) {
   renderTabs();
-  const title = type==='near' ? '均線買點' : type==='down' ? '回踩買點' : '訊號異動';
+  const title = type==='near' ? '均線買點' : type==='down' ? '回踩買點' : type==='change' ? '訊號異動' : '創新高';
   // 收集所有5個群組中符合條件的股票
   const seen = new Set();
   const matched = [];
@@ -505,6 +522,8 @@ function renderSpecial(type) {
         if (prev && prev !== s.daily.action) {
           matched.push({...s, prevAction: prev}); seen.add(s.id);
         }
+      } else if (type==='newhigh') {
+        if (s.new_high_10) { matched.push(s); seen.add(s.id); }
       }
     });
   });
@@ -521,14 +540,15 @@ function renderSpecial(type) {
       <span class="col-sig">訊號／均線</span>
       <span class="col-del"></span>
     </div>`;
-    if (type==='change') {
-    h += matched.map((s,si) => {
+    const sortedMatched = sortBySignal(matched);
+  if (type==='change') {
+    h += sortedMatched.map((s,si) => {
       const card = rc(s, cur, si, true);
       const arrow = `<div style="font-size:12px;color:#ff9f0a;padding:2px 14px 6px">${s.prevAction} → ${s.daily.action}</div>`;
       return card + arrow;
     }).join('');
   } else {
-    h += matched.map((s,si) => rc(s, cur, si, true)).join('');
+    h += sortedMatched.map((s,si) => rc(s, cur, si, true)).join('');
   }
   }
   document.getElementById('main').innerHTML = h;
@@ -540,6 +560,7 @@ function render(){
   if(cur === 5) { renderSpecial('near'); return; }
   if(cur === 6) { renderSpecial('down'); return; }
   if(cur === 7) { renderSpecial('change'); return; }
+  if(cur === 8) { renderSpecial('newhigh'); return; }
   const g=groups[cur];
   let h=`
   <div class="grp-bar">
@@ -651,7 +672,7 @@ async function scan(gi){
         s.ma5=r.ma5; s.ma10=r.ma10; s.ma20=r.ma20; s.ma60d=r.ma60d; s.ma60k240=r.ma60k240;
         s.near_ma5=r.near_ma5; s.near_ma10=r.near_ma10;
         s.near_ma20=r.near_ma20; s.near_ma60d=r.near_ma60d; s.near_ma60=r.near_ma60;
-        s.daily=r.daily; s.weekly=r.weekly; s.yesterday=r.yesterday;
+        s.daily=r.daily; s.weekly=r.weekly; s.yesterday=r.yesterday; s.new_high_10=r.new_high_10;
         s.name=r.name||'';
         hs.push({id:s.id,price:r.price,daily:r.daily,weekly:r.weekly});
       }
@@ -664,6 +685,7 @@ async function scan(gi){
       if(hist.length>30) hist.splice(30);
       shi(hist);
     }
+    groups[gi].stocks = sortBySignal(groups[gi].stocks);
     groups[gi].lastUpdate='更新：'+ts(); sgr(); saveSigs();
   }catch(e){alert('連線失敗，請稍後再試');}
   btn.disabled=false; btn.textContent='⚡ 掃描';

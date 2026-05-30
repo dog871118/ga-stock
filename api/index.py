@@ -412,7 +412,7 @@ html, body {
 
 <script>
 const GK = 'ga_g_v5', HK = 'ga_h_v5', SK = 'ga_sig_v5';
-const DN = ['短線強勢股','波段持股','觀察名單','自選群組4','自選群組5'];
+const DN = ['自選群組1','自選群組2','自選群組3','自選群組4'];
 const SPECIAL_GROUPS = [
   { name: '均線買點', idx: 5 },
   { name: '回踩買點', idx: 6 },
@@ -420,16 +420,25 @@ const SPECIAL_GROUPS = [
 ];
 
 function lgr() {
-  try { const d=JSON.parse(localStorage.getItem(GK)); if(d&&d.length===5) return d; } catch(e){}
+  try {
+    const d=JSON.parse(localStorage.getItem(GK));
+    if(d && d.length===4) return d;
+    // 舊版5個群組，取前4個
+    if(d && d.length===5) return d.slice(0,4);
+  } catch(e){}
   return DN.map(n=>({name:n,stocks:[]}));
 }
 function allGroups() {
   return [
     ...groups,
+    { name:'買進訊號', stocks:[], special:'buy' },
+    { name:'賣出訊號', stocks:[], special:'sell' },
+    { name:'持有訊號', stocks:[], special:'hold' },
+    { name:'空手訊號', stocks:[], special:'idle' },
+    { name:'訊號異動', stocks:[], special:'change' },
     { name:'均線買點', stocks:[], special:'near' },
     { name:'回踩買點', stocks:[], special:'down' },
-    { name:'訊號異動', stocks:[], special:'change' },
-    { name:'創新高', stocks:[], special:'newhigh' },
+    { name:'創新高',   stocks:[], special:'newhigh' },
   ];
 }
 function sgr() { localStorage.setItem(GK,JSON.stringify(groups)); }
@@ -503,7 +512,11 @@ function sortBySignal(arr) {
 
 function renderSpecial(type) {
   renderTabs();
-  const title = type==='near' ? '均線買點' : type==='down' ? '回踩買點' : type==='change' ? '訊號異動' : '創新高';
+  const titles = {
+    'buy':'買進訊號','sell':'賣出訊號','hold':'持有訊號','idle':'空手訊號',
+    'change':'訊號異動','near':'均線買點','down':'回踩買點','newhigh':'創新高'
+  };
+  const title = titles[type] || type;
   // 收集所有5個群組中符合條件的股票
   const seen = new Set();
   const matched = [];
@@ -511,7 +524,15 @@ function renderSpecial(type) {
     (g.stocks||[]).forEach(s => {
       if (!s.daily) return;
       if (seen.has(s.id)) return;
-      if (type==='near') {
+      if (type==='buy') {
+        if (s.daily.action==='買進') { matched.push(s); seen.add(s.id); }
+      } else if (type==='sell') {
+        if (s.daily.action==='賣出') { matched.push(s); seen.add(s.id); }
+      } else if (type==='hold') {
+        if (s.daily.action==='持有') { matched.push(s); seen.add(s.id); }
+      } else if (type==='idle') {
+        if (s.daily.action==='空手') { matched.push(s); seen.add(s.id); }
+      } else if (type==='near') {
         const hasNear = s.near_ma5||s.near_ma10||s.near_ma20||s.near_ma60d||s.near_ma60;
         if (hasNear) { matched.push(s); seen.add(s.id); }
       } else if (type==='down') {
@@ -557,10 +578,14 @@ function renderSpecial(type) {
 function render(){
   renderTabs();
   // 特殊群組
-  if(cur === 5) { renderSpecial('near'); return; }
-  if(cur === 6) { renderSpecial('down'); return; }
-  if(cur === 7) { renderSpecial('change'); return; }
-  if(cur === 8) { renderSpecial('newhigh'); return; }
+  if(cur === 4) { renderSpecial('buy');     return; }
+  if(cur === 5) { renderSpecial('sell');    return; }
+  if(cur === 6) { renderSpecial('hold');    return; }
+  if(cur === 7) { renderSpecial('idle');    return; }
+  if(cur === 8) { renderSpecial('change');  return; }
+  if(cur === 9) { renderSpecial('near');    return; }
+  if(cur === 10){ renderSpecial('down');    return; }
+  if(cur === 11){ renderSpecial('newhigh'); return; }
   const g=groups[cur];
   let h=`
   <div class="grp-bar">
@@ -605,7 +630,7 @@ function rc(s,gi,si,readonly=false){
     ?`<div class="ma-item"><span class="ma-val ${maColor(p,val)}">${val}${near?' 😊':''}</span><span class="ma-lbl">${lbl}</span></div>`
     :`<div class="ma-item"><span class="ma-val ma-na">—</span><span class="ma-lbl">${lbl}</span></div>`;
   const isHoldingDown = s.daily && s.daily.action==='持有' && s.prev_price && s.price < s.prev_price;
-  const rowStyle = isHoldingDown ? ' style="background:#c0145a;"' : '';
+  const rowStyle = isHoldingDown ? ' style="background:#0e6b6b;"' : '';
   return `<div class="row"${rowStyle}>
     <div class="r-id-wrap">
       <span class="r-id">${s.id}</span>
@@ -693,13 +718,13 @@ async function scan(gi){
 }
 
 async function autoScan(){
-  for(let i=0;i<groups.length;i++){
+  for(let i=0;i<4;i++){
     if(groups[i].stocks&&groups[i].stocks.length>0){
       cur=i; render(); await scan(i);
     }
   }
   // 掃描完後，如果在特殊群組頁則重新渲染
-  if(cur<5) {
+  if(cur<4) {
     cur=groups.findIndex(g=>g.stocks&&g.stocks.length>0);
     if(cur<0) cur=0;
   }
@@ -710,7 +735,7 @@ async function saveCloud(){
   const btn=document.getElementById('btnSave');
   btn.textContent='儲存中…'; btn.disabled=true;
   const rows=[];
-  groups.forEach((g,gi)=>{
+  groups.slice(0,4).forEach((g,gi)=>{
     if(g.stocks&&g.stocks.length>0) g.stocks.forEach(s=>rows.push([gi,g.name,s.id]));
     else rows.push([gi,g.name,'']);
   });
@@ -734,15 +759,13 @@ async function loadCloud(){
     const rows=j.data||[];
     if(rows.length===0){alert('雲端無資料');btn.textContent='⬇ 載雲端';btn.disabled=false;return;}
     const ng=DN.map((n,i)=>({name:n,stocks:[]}));
-    // 先更新所有群組名稱（包含空群組）
     rows.forEach(row=>{
       const gi=parseInt(row[0]);
-      if(gi>=0&&gi<5 && row[1]) ng[gi].name=row[1];
+      if(gi>=0&&gi<4 && row[1]) ng[gi].name=row[1];
     });
-    // 再加入有股票的列
     rows.filter(r=>r&&String(r[2]||'').trim()!=='').forEach(row=>{
       const gi=parseInt(row[0]), sid=String(row[2]||'').trim().toUpperCase();
-      if(gi>=0&&gi<5 && sid && !ng[gi].stocks.find(s=>s.id===sid)) ng[gi].stocks.push({id:sid});
+      if(gi>=0&&gi<4 && sid && !ng[gi].stocks.find(s=>s.id===sid)) ng[gi].stocks.push({id:sid});
     });
     groups=ng; sgr(); 
     // 強制清掉舊版 key，避免下次讀到過期資料

@@ -1,4 +1,4 @@
-# GA Stock v8 - MA20/MA60/均線買點/回踩買點/訊號異動
+# 東東.STOCK - 即時追蹤 + 每日戰報整合版（後端與原 GA Stock v8 相同）
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import yfinance as yf
@@ -235,7 +235,7 @@ HTML_PAGE = """<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>GA 股票訊號</title>
+<title>東東.STOCK</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html, body {
@@ -261,6 +261,14 @@ html, body {
 }
 .hbtn:active { background: #1e3a5f; }
 .hbtn:disabled { opacity: .4; }
+/* 模式切換：即時追蹤 / 每日戰報 */
+.mode-switch { display: flex; gap: 6px; margin-bottom: 8px; }
+.mode-btn {
+  flex: 1; padding: 8px; font-size: 14px; font-weight: 700;
+  background: #132338; border: 1px solid #1e3a5f; border-radius: 10px;
+  color: #7aa8d0; cursor: pointer; font-family: inherit;
+}
+.mode-btn.active { background: #38bdf8; color: #04223a; border-color: #38bdf8; }
 .tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding-bottom: 0; }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
@@ -347,6 +355,40 @@ html, body {
 .r-del:active { color: #ff453a; }
 .empty { padding: 40px 14px; text-align: center; color: #ffffff; font-size: 14px; line-height: 2.2; }
 .loading { padding: 20px 14px; text-align: center; color: #ffffff; font-size: 13px; }
+/* ===== 每日戰報樣式 ===== */
+.rpt-date { font-size: 12px; color: #7aa8d0; padding: 0 14px 4px; }
+.rpt-src { font-size: 11px; padding: 0 14px 8px; }
+.rpt-src.live { color: #34c759; } .rpt-src.cache { color: #ff9f0a; }
+.card {
+  background: #132338; border: 1px solid #1e3a5f; border-radius: 12px;
+  padding: 11px 13px; margin: 0 14px 9px;
+}
+.card-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.card-stk { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.card-nm { font-size: 16px; font-weight: 700; color: #ffffff; }
+.card-cd { font-size: 11px; color: #38bdf8; font-variant-numeric: tabular-nums; }
+.card-px { font-size: 18px; font-weight: 800; color: #ffd60a; font-variant-numeric: tabular-nums; }
+.card-meta { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: #7aa8d0; }
+.card-meta b { color: #ffffff; font-weight: 600; }
+.tg { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 5px; font-weight: 700; }
+.tg-buy { background: rgba(52,199,89,.18); color: #34c759; }
+.tg-sell { background: rgba(255,69,58,.18); color: #ff453a; }
+.tg-hold { background: rgba(255,214,10,.18); color: #ffd60a; }
+.tg-go { background: rgba(56,189,248,.18); color: #38bdf8; }
+.tg-rise { background: rgba(255,214,10,.22); color: #ffd60a; }
+.tg-warn { background: rgba(255,159,10,.18); color: #ff9f0a; }
+.ov { background: #132338; border: 1px solid #1e3a5f; border-radius: 14px; padding: 14px; margin: 0 14px 12px; }
+.ov-bias { font-size: 22px; font-weight: 800; text-align: center; margin-bottom: 12px; }
+.ov-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; }
+.ov-stat { background: #0d1b2a; border: 1px solid #1e3a5f; border-radius: 10px; padding: 9px 11px; }
+.ov-k { font-size: 11px; color: #7aa8d0; } .ov-v { font-size: 20px; font-weight: 800; }
+.ov-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.ov-chip { font-size: 11px; background: #0d1b2a; border: 1px solid #1e3a5f; color: #ffd60a; padding: 2px 8px; border-radius: 6px; }
+.rtoggle { display: flex; gap: 6px; padding: 0 14px; margin-bottom: 10px; }
+.rtoggle button { flex: 1; background: #132338; border: 1px solid #1e3a5f; color: #7aa8d0; font-family: inherit; font-size: 13px; font-weight: 700; padding: 8px; border-radius: 9px; cursor: pointer; }
+.rtoggle button.on { background: rgba(56,189,248,.16); border-color: #38bdf8; color: #38bdf8; }
+.rpane { display: none; } .rpane.on { display: block; }
+.pick { background: #0d1b2a; border: 1px solid #1e3a5f; border-radius: 9px; padding: 8px 10px; margin-top: 8px; }
 .hist-overlay {
   position: fixed; inset: 0; z-index: 200;
   background: rgba(0,0,0,.6);
@@ -387,17 +429,23 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">GA.STOCK</div>
-    <div class="hdr-btns">
+    <div class="logo">東東.STOCK</div>
+    <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
       <button class="hbtn" id="btnSave" onclick="saveCloud()">↑ 存雲端</button>
       <button class="hbtn" onclick="toggleHist()">≡ 歷史</button>
     </div>
   </div>
+  <div class="mode-switch">
+    <button class="mode-btn active" id="mTrack" onclick="setMode('track')">📈 即時追蹤</button>
+    <button class="mode-btn" id="mReport" onclick="setMode('report')">📊 每日戰報</button>
+  </div>
   <div class="tabs" id="tabs"></div>
+  <div class="tabs" id="rptTabs" style="display:none"></div>
 </div>
 
 <div class="main" id="main"></div>
+<div class="main" id="rptMain" style="display:none"></div>
 
 <div class="hist-overlay" id="histOverlay" onclick="closeHistBg(event)">
   <div class="hist-sheet">
@@ -810,6 +858,175 @@ function renderHist(){
 }
 
 function clearHist(){if(!confirm('確定清除所有歷史？'))return;shi([]);renderHist();}
+
+/* ============================================================
+   每日戰報（讀 V25 推上 GitHub 的 daily_report.json）
+   ============================================================ */
+const RPT_URL = "https://raw.githubusercontent.com/dog871118/ga-stock/main/data/daily_report.json";
+let RPT=null, rptTab='市場總覽', rptLoaded=false;
+const RTABS=['市場總覽','持股現況','今日精選','早期族群','明日操作'];
+const rg=(o,k,d='−')=>(o&&o[k]!=null&&o[k]!=='')?o[k]:d;
+function rsig(s){
+  s=String(s||'');
+  if(s.includes('買')) return `<span class="tg tg-buy">${s}</span>`;
+  if(s.includes('賣')) return `<span class="tg tg-sell">${s}</span>`;
+  if(s.includes('持有')) return `<span class="tg tg-hold">${s}</span>`;
+  if(s.includes('待')) return `<span class="tg tg-warn">${s}</span>`;
+  return s==='−'?'':`<span class="tg tg-go">${s}</span>`;
+}
+
+function setMode(m){
+  const track=(m==='track');
+  document.getElementById('mTrack').classList.toggle('active',track);
+  document.getElementById('mReport').classList.toggle('active',!track);
+  document.getElementById('tabs').style.display    = track?'flex':'none';
+  document.getElementById('main').style.display    = track?'block':'none';
+  document.getElementById('trackBtns').style.display= track?'flex':'none';
+  document.getElementById('rptTabs').style.display  = track?'none':'flex';
+  document.getElementById('rptMain').style.display  = track?'none':'block';
+  if(!track && !rptLoaded){ loadReport(); }
+}
+
+function renderRptTabs(){
+  document.getElementById('rptTabs').innerHTML=RTABS.map(t=>
+    `<button class="tab${t===rptTab?' active':''}" onclick="rptSw('${t}')">${t}</button>`
+  ).join('');
+}
+function rptSw(t){ rptTab=t; renderRpt(); window.scrollTo(0,0); }
+
+async function loadReport(){
+  rptLoaded=true;
+  const m=document.getElementById('rptMain');
+  m.innerHTML='<div class="loading">載入每日戰報中…</div>';
+  try{
+    const r=await fetch(RPT_URL,{cache:'no-store'});
+    if(!r.ok) throw 0;
+    RPT=await r.json();
+  }catch(e){ RPT=null; }
+  renderRpt();
+}
+
+function renderRpt(){
+  renderRptTabs();
+  const m=document.getElementById('rptMain');
+  if(!RPT){
+    m.innerHTML='<div class="empty">尚無每日戰報資料<br>請先在電腦跑 V25（並確認已推送 GitHub）<br><br><span style="font-size:12px;color:#7aa8d0">跑完後回到這裡，點下方重新整理</span><br><br><button class="hbtn" onclick="rptLoaded=false;loadReport()">↻ 重新載入</button></div>';
+    return;
+  }
+  let h=`<div class="rpt-date">資料日期：${rg(RPT,'日期')}　產出 ${rg(RPT,'產出時間','')}</div>`;
+  if(rptTab==='市場總覽')      h+=rptMarket();
+  else if(rptTab==='持股現況') h+=rptHold();
+  else if(rptTab==='今日精選') h+=rptPick();
+  else if(rptTab==='早期族群') h+=rptEarly();
+  else if(rptTab==='明日操作') h+=rptTmr();
+  m.innerHTML=h;
+  document.querySelectorAll('.rtoggle button').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('.rtoggle button').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.rpane').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');document.getElementById(b.dataset.pane).classList.add('on');
+  });
+}
+
+function rptMarket(){
+  const o=RPT['市場總覽']||{};
+  const rise=RPT['起漲股']||[], nh=RPT['強勢創新高']||[];
+  let h=`<div class="ov">
+    <div class="ov-bias">${rg(o,'市場偏向')}</div>
+    <div class="ov-grid">
+      <div class="ov-stat"><div class="ov-k">多方族群</div><div class="ov-v c-buy">${rg(o,'多方族群數','0')}</div></div>
+      <div class="ov-stat"><div class="ov-k">空方族群</div><div class="ov-v c-sell">${rg(o,'空方族群數','0')}</div></div>
+      <div class="ov-stat"><div class="ov-k">起漲股</div><div class="ov-v">${rg(o,'起漲股數','0')}</div></div>
+      <div class="ov-stat"><div class="ov-k">強勢創新高</div><div class="ov-v">${rg(o,'強勢創新高','0')}</div></div>
+    </div>
+    ${(o['早期族群']&&o['早期族群'].length)?`<div class="ov-chips">🌱 ${o['早期族群'].map(x=>`<span class="ov-chip">${x}</span>`).join('')}</div>`:''}
+  </div>
+  <div class="rtoggle">
+    <button class="on" data-pane="pn-rise">起漲股 ${rise.length}</button>
+    <button data-pane="pn-nh">強勢創新高 ${nh.length}</button>
+  </div>
+  <div class="rpane on" id="pn-rise">`;
+  h+= rise.length?rise.map(r=>`<div class="card">
+      <div class="card-row"><div class="card-stk"><span class="card-nm">${rg(r,'名稱')}</span>
+        <span class="card-cd">${rg(r,'股票')}</span>${rsig(rg(r,'買賣訊號'))}</div>
+        <span class="card-px">${rg(r,'收盤')}</span></div>
+      <div class="card-meta"><span>RS60 <b>${rg(r,'RS60')}</b></span><span>慣性 <b>${rg(r,'均線慣性')}</b></span><span>平台 <b>${rg(r,'平台')}</b></span></div>
+      <div class="card-meta"><span>追價 <b class="c-buy">${rg(r,'追價點')}</b></span><span>停損 <b class="c-sell">${rg(r,'停損點')}</b></span></div>
+    </div>`).join(''):'<div class="empty">無起漲股</div>';
+  h+=`</div><div class="rpane" id="pn-nh">`;
+  h+= nh.length?nh.map(r=>`<div class="card">
+      <div class="card-row"><div class="card-stk"><span class="card-nm">${rg(r,'名稱')}</span>
+        <span class="card-cd">${rg(r,'股票')}</span>${rsig(rg(r,'買賣訊號'))}</div>
+        <span class="card-px">${rg(r,'收盤')}</span></div>
+      <div class="card-meta"><span>RS60 <b>${rg(r,'RS60')}</b></span><span>慣性 <b>${rg(r,'均線慣性')}</b></span><span>波段位置 <b>${rg(r,'波段位置')}</b></span></div>
+    </div>`).join(''):'<div class="empty">無資料</div>';
+  h+=`</div>`;
+  return h;
+}
+
+function rptHold(){
+  const arr=RPT['持股現況']||[];
+  if(!arr.length) return '<div class="empty">無持股資料</div>';
+  return arr.map(s=>`<div class="card">
+    <div class="card-row"><div class="card-stk"><span class="card-nm">${rg(s,'名稱')}</span>
+      <span class="card-cd">${rg(s,'代號')}</span>${rsig(rg(s,'訊號'))}</div>
+      <span class="card-px">${rg(s,'現價')}</span></div>
+    <div class="card-meta">
+      <span>慣性 <b>${rg(s,'均線慣性')}</b></span>
+      <span>停損 <b class="c-sell">${rg(s,'停損')}</b></span>
+      <span>支撐 <b>${rg(s,'支撐')}</b></span>
+      <span>壓力 <b>${rg(s,'壓力')}</b></span>
+      <span>目標 <b class="c-buy">${rg(s,'目標')}</b></span>
+    </div>
+    <div class="card-meta"><span>明日 <b>${rg(s,'明日預測')}</b>　${rg(s,'明日操作','')}</span></div>
+  </div>`).join('');
+}
+
+function rptPick(){
+  const arr=RPT['今日精選']||[];
+  if(!arr.length) return '<div class="empty">今日無精選標的</div>';
+  return arr.map(s=>`<div class="card">
+    <div class="card-row"><div class="card-stk"><span class="card-nm">${rg(s,'名稱')}</span>
+      <span class="card-cd">${rg(s,'代號')}</span>
+      ${String(rg(s,'類型')).includes('起漲')?`<span class="tg tg-rise">${rg(s,'類型')}</span>`:`<span class="tg tg-go">${rg(s,'類型')}</span>`}
+      ${rsig(rg(s,'訊號'))}</div>
+      <span class="card-px">${rg(s,'現價')}</span></div>
+    <div class="card-meta"><span>RS60 <b>${rg(s,'RS60')}</b></span><span>慣性 <b>${rg(s,'均線慣性')}</b></span></div>
+    <div class="card-meta"><span>進場 <b style="color:#38bdf8">${rg(s,'進場條件')}</b></span></div>
+    <div class="card-meta"><span>支撐 <b>${rg(s,'支撐')}</b></span><span>停損 <b class="c-sell">${rg(s,'停損')}</b></span><span>壓力 <b>${rg(s,'壓力')}</b></span></div>
+    <div class="card-meta"><span>${rg(s,'理由','')}</span></div>
+  </div>`).join('');
+}
+
+function rptEarly(){
+  const arr=RPT['早期族群']||[];
+  if(!arr.length) return '<div class="empty">今日無早期族群</div>';
+  return arr.map(grp=>`<div class="card">
+    <div class="card-row"><span class="card-nm">${rg(grp,'族群')}</span>
+      <span class="tg tg-rise">${rg(grp,'階段')}</span></div>
+    <div class="card-meta"><span>族群RS60 <b>${rg(grp,'RS60')}</b></span><span>動能加速 <b class="c-buy">+${rg(grp,'動能加速')}</b></span></div>
+    ${(grp['精選個股']||[]).map(p=>`<div class="pick">
+      <div class="card-row"><div class="card-stk"><span class="card-nm" style="font-size:14px">${rg(p,'名稱')}</span>
+        <span class="card-cd">${rg(p,'代號')}</span></div><span class="card-px" style="font-size:15px">${rg(p,'現價')}</span></div>
+      <div class="card-meta"><span>進場 <b style="color:#38bdf8">${rg(p,'進場')}</b></span>
+        <span>停損 <b class="c-sell">${rg(p,'停損')}</b></span><span>風報比 <b>${rg(p,'風報比')}</b></span>
+        <span>評分 <b style="color:#ffd60a">${rg(p,'評分')}</b></span></div>
+    </div>`).join('')}
+  </div>`).join('');
+}
+
+function rptTmr(){
+  const arr=RPT['明日操作']||[];
+  if(!arr.length) return '<div class="empty">無明日操作</div>';
+  return arr.map(s=>{
+    const act=String(rg(s,'動作'));
+    const cls=act.includes('出場')?'tg-sell':act.includes('續抱')?'tg-buy':act.includes('⭐')?'tg-rise':'tg-hold';
+    return `<div class="card">
+      <div class="card-row"><div class="card-stk"><span class="card-nm">${rg(s,'名稱')}</span>
+        <span class="card-cd">${rg(s,'代號')}</span><span class="tg ${cls}">${act}</span></div></div>
+      <div class="card-meta"><span>停損 <b class="c-sell">${rg(s,'停損')}</b></span><span>明日 <b>${rg(s,'明日')}</b></span></div>
+    </div>`;
+  }).join('');
+}
 
 render();
 window.addEventListener('load',()=>{ setTimeout(()=>loadCloud(),1500); });

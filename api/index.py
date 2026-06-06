@@ -355,6 +355,13 @@ html, body {
 .r-del:active { color: #ff453a; }
 .empty { padding: 40px 14px; text-align: center; color: #ffffff; font-size: 14px; line-height: 2.2; }
 .loading { padding: 20px 14px; text-align: center; color: #ffffff; font-size: 13px; }
+.card { position: relative; }
+.card-del { position: absolute; top: 8px; right: 10px; background: none; border: none; color: #7aa8d0; font-size: 18px; cursor: pointer; padding: 2px 4px; line-height: 1; }
+.card-del:active { color: #ff453a; }
+.card-down { border-color: #0e6b6b; background: #0e2b2b; }
+.tg-idle { background: rgba(122,168,208,.15); color: #7aa8d0; }
+.ma-meta b { font-variant-numeric: tabular-nums; }
+.tbl-hdr { display: none !important; }
 /* ===== 每日戰報樣式 ===== */
 .rpt-date { font-size: 12px; color: #7aa8d0; padding: 0 14px 4px; }
 .rpt-src { font-size: 11px; padding: 0 14px 8px; }
@@ -662,51 +669,40 @@ function render(){
   document.getElementById('main').innerHTML=h;
 }
 
+function tgCls(a){ return a==='買進'?'tg-buy':a==='持有'?'tg-hold':a==='賣出'?'tg-sell':'tg-idle'; }
 function rc(s,gi,si,readonly=false){
+  const delBtn = readonly ? '' : `<button class="card-del" onclick="del(${gi},${si})">×</button>`;
   if(!s.daily){
-    return `<div class="row row-pending">
-      <span class="r-id">${s.id}</span>
-      <span class="r-price">—</span>
-      <div class="r-mid"><span style="color:#a0b4c8;font-size:13px">尚未查詢</span></div>
-      ${readonly?'':`<button class="r-del" onclick="del(${gi},${si})">×</button>`}
+    return `<div class="card">
+      ${delBtn}
+      <div class="card-row"><div class="card-stk"><span class="card-cd">${s.id}</span></div>
+        <span style="color:#7aa8d0;font-size:13px">尚未查詢</span></div>
     </div>`;
   }
   const d=s.daily, w=s.weekly||{action:'空手',days:0};
-  const dt=d.days>0?`<span class="sig-days">${d.days}天</span>`:'';
-  const wt=w.days>0?`<span class="sig-days">${w.days}週</span>`:'';
-  const mv=(val,lbl,p,near)=>val
-    ?`<div class="ma-item"><span class="ma-val ${maColor(p,val)}">${val}${near?' 😊':''}</span><span class="ma-lbl">${lbl}</span></div>`
-    :`<div class="ma-item"><span class="ma-val ma-na">—</span><span class="ma-lbl">${lbl}</span></div>`;
-  const isHoldingDown = s.daily && s.daily.action==='持有' && s.prev_price && s.price < s.prev_price;
-  const rowStyle = isHoldingDown ? ' style="background:#0e6b6b;"' : '';
-  return `<div class="row"${rowStyle}>
-    <div class="r-id-wrap">
-      <span class="r-id">${s.id}</span>
-      ${s.name?`<span class="r-name">${s.name}</span>`:''}
+  const dtag=`<span class="tg ${tgCls(d.action)}">日 ${d.action}${d.days>0?' '+d.days+'天':''}</span>`;
+  const wtag=`<span class="tg ${tgCls(w.action)}">週 ${w.action}${w.days>0?' '+w.days+'週':''}</span>`;
+  const ma=(val,lbl,p,near)=> val
+    ? `<span>${lbl} <b class="${maColor(p,val)}">${val}${near?' 😊':''}</b></span>`
+    : `<span>${lbl} <b class="ma-na">—</b></span>`;
+  const down = d.action==='持有' && s.prev_price && s.price < s.prev_price;
+  return `<div class="card${down?' card-down':''}">
+    ${delBtn}
+    <div class="card-row">
+      <div class="card-stk">
+        <span class="card-nm">${s.name||s.id}</span>
+        <span class="card-cd">${s.id}</span>
+      </div>
+      <span class="card-px">${s.price}</span>
     </div>
-    <span class="r-price">${s.price}</span>
-    <div class="r-mid">
-      <div class="sig-line">
-        <span class="sig-lbl">日</span>
-        <span class="sig-txt ${sigColor(d.action)}">${d.action}</span>
-        ${dt}
-      </div>
-      <div class="sig-line">
-        <span class="sig-lbl">週</span>
-        <span class="sig-txt ${sigColor(w.action)}">${w.action}</span>
-        ${wt}
-      </div>
-      <div class="ma-row">
-        ${mv(s.ma5,'MA5',s.price,s.near_ma5)}
-        ${mv(s.ma10,'MA10',s.price,s.near_ma10)}
-        ${mv(s.ma20,'MA20',s.price,s.near_ma20)}
-      </div>
-      <div class="ma-row">
-        ${mv(s.ma60d,'MA60',s.price,s.near_ma60d)}
-        ${mv(s.ma60k240,'60MA240',s.price,s.near_ma60)}
-      </div>
+    <div class="card-meta">${dtag}${wtag}</div>
+    <div class="card-meta ma-meta">
+      ${ma(s.ma5,'MA5',s.price,s.near_ma5)}
+      ${ma(s.ma10,'MA10',s.price,s.near_ma10)}
+      ${ma(s.ma20,'MA20',s.price,s.near_ma20)}
+      ${ma(s.ma60d,'MA60',s.price,s.near_ma60d)}
+      ${ma(s.ma60k240,'60MA240',s.price,s.near_ma60)}
     </div>
-    <button class="r-del" onclick="del(${gi},${si})">×</button>
   </div>`;
 }
 

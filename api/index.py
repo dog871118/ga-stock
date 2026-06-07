@@ -245,6 +245,23 @@ def report_save():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/market-load', methods=['GET'])
+def market_load():
+    try:
+        r = http_requests.get(GAS_ENDPOINT, params={'action': 'loadmarket'}, timeout=20)
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/market-save', methods=['POST'])
+def market_save():
+    try:
+        market = request.json.get('market', '')
+        r = http_requests.post(GAS_ENDPOINT, data={'action': 'savemarket', 'payload': market}, timeout=30)
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="zh-TW">
@@ -474,9 +491,11 @@ html, body {
 
 <div class="main" id="main"></div>
 <div class="main" id="rptMain" style="display:none"></div>
+<div class="main" id="mktMain" style="display:none"></div>
 
 <nav class="bottomnav" id="bottomnav">
-  <button data-view="track" class="on" onclick="selectView('track')"><span class="ic">📈</span>追蹤</button>
+  <button data-view="大盤" onclick="selectView('大盤')"><span class="ic">🌡</span>大盤</button>
+  <button data-view="track" class="on" onclick="selectView('track')"><span class="ic">📈</span>自選</button>
   <button data-view="市場總覽" onclick="selectView('市場總覽')"><span class="ic">📊</span>總覽</button>
   <button data-view="持股現況" onclick="selectView('持股現況')"><span class="ic">💼</span>持股</button>
   <button data-view="今日精選" onclick="selectView('今日精選')"><span class="ic">⭐</span>精選</button>
@@ -2943,15 +2962,138 @@ function rsig(s){
   return s==='−'?'':`<span class="tg tg-go">${s}</span>`;
 }
 
+// ===== 大盤分頁（完全獨立於戰報：自己的資料 MKT、自己的 localStorage、自己的雲端 market-save/load）=====
+const MKT_KEY='donG_mkt';
+let MKT=null, mktLoaded=false;
+const EMBEDDED_MKT={"日期":"2026-06-07","產出時間":"2026-06-07 15:27","收盤":45070.94,"漲跌":-606.52,"漲跌幅":-1.33,"波段方向":"偏多","波段分數":100,"信心":"強","短線時機":"轉弱","短線註記":["下跌 -1.33%","向下跳空","KD 高檔死叉","RSI 頂背離","高檔短線轉弱"],"操作基調":"波段方向偏多不變，但短線轉弱、拉回中 → 今天別追高，等回穩或回檔到 MA10／MA20 找買點；跌破季線才轉保守。","溫度":{"分數":76,"等級":"偏熱","操作含義":"偏熱 → 續抱可以，但別追高，留意拉回。","降溫路徑":"未明顯下跌","止穩":"—","組成":{"距年線分位":99,"乖離分位":45,"RSI":71,"K":76,"區間位置":78}},"趨勢":{"週":"多頭","日":"盤整","60分":"盤整","突破訊號":"⬜觀望"},"均線":{"MA5":45621,"MA10":44790,"MA20":43031,"季線":38316,"半年線":34582,"年線":29806,"排列":"多頭排列","帶寬":"發散(分位99%) ← 趨勢明確/延伸"},"長線乖離":{"距年線":51.2,"分位":99},"量價":"量價中性","OBV":"上升","乖離":{"10日":0.63,"20日":4.74,"分位":45,"警示":"正常"},"指標":{"KD":"76/83","KD狀態":"中性・死亡交叉","RSI":71,"MACD":"多方・柱狀轉弱","背離":{"MACD":"無","RSI":"頂背離","OBV":"無"}},"結構":{"區間位置":78,"創60日新高":false,"創60日新低":false,"缺口":"向下跳空"},"K線":"無明顯型態","關鍵價位":{"壓力":[45621,46459],"支撐":[44790,43031,40021],"轉多關卡":45621,"轉空關卡":38316},"警示":["短線轉弱：下跌 -1.33%、向下跳空、KD 高檔死叉、RSI 頂背離、高檔短線轉弱 → 今天不宜追高","距年線 +51.2%（歷史99%分位）→ 長線乖離過大，系統性回檔風險升高","RSI 頂背離 → 漲勢動能轉弱，留意反轉"]};
+
+function biasColor(d){ return d==='偏多'?'#30d158': d==='偏空'?'#ff453a':'#8e8e93'; }
+function tempColor(b){ return b==='過熱'?'#ff453a': b==='偏熱'?'#ff9f0a': b==='中性'?'#8e8e93': b==='偏冷'?'#5ac8fa':'#0a84ff'; }
+function shortColor(d){ return d==='轉強'?'#30d158': d==='轉弱'?'#ff453a':'#8e8e93'; }
+
+async function loadMarket(){
+  mktLoaded=true;
+  const m=document.getElementById('mktMain');
+  m.innerHTML='<div class="loading">載入今日大盤中…</div>';
+  try{
+    const r=await fetch('/api/market-load',{signal:AbortSignal.timeout(20000)});
+    const j=await r.json();
+    if(j && j.market){
+      MKT=JSON.parse(j.market); MKT.__src='cloud';
+      try{ localStorage.setItem(MKT_KEY, j.market); }catch(e){}
+      renderMkt(); return;
+    }
+  }catch(e){}
+  try{
+    const saved=localStorage.getItem(MKT_KEY);
+    if(saved){ MKT=JSON.parse(saved); MKT.__src='paste'; }
+    else { MKT=EMBEDDED_MKT; MKT.__src='preview'; }
+  }catch(e){ MKT=EMBEDDED_MKT; MKT.__src='preview'; }
+  renderMkt();
+}
+function toggleImportMkt(){
+  const p=document.getElementById('impPanelMkt');
+  if(p) p.style.display=(p.style.display==='none'||!p.style.display)?'block':'none';
+}
+function doImportMkt(){
+  const box=document.getElementById('impBoxMkt');
+  const t=(box.value||'').trim();
+  if(!t){ alert('請先貼上「大盤分析」複製來的內容'); return; }
+  let obj;
+  try{ obj=JSON.parse(t); }catch(e){ alert('格式不對，請回大盤分析重新按「複製今日大盤」再貼一次'); return; }
+  if(!obj['溫度'] && !obj['波段方向']){ alert('這份看起來不是大盤資料（少了溫度／波段方向）。請確認是按「複製今日大盤」複製來的，而不是每日戰報。'); return; }
+  const str=JSON.stringify(obj);
+  try{ localStorage.setItem(MKT_KEY, str); }catch(e){}
+  MKT=obj; MKT.__src='paste';
+  renderMkt();
+  fetch('/api/market-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({market:str})})
+    .then(r=>r.json())
+    .then(j=>{
+      if(j && j.ok){ MKT.__src='cloud'; if(document.getElementById('mktMain').style.display!=='none') renderMkt(); }
+      else { alert('已匯入，但雲端同步失敗，手機可能看不到'); }
+    })
+    .catch(e=>{ alert('已匯入，但雲端同步失敗，手機可能看不到'); });
+}
+
+function renderMkt(){
+  const m=document.getElementById('mktMain');
+  if(!MKT){ loadMarket(); return; }
+  const src=MKT.__src;
+  const t=MKT['溫度']||{}, tb=rg(t,'等級','—'), tsc=Number(rg(t,'分數',0))||0;
+  const wd=rg(MKT,'波段方向','—'), sd=rg(MKT,'短線時機','—');
+  const tr=MKT['趨勢']||{}, ma=MKT['均線']||{}, ind=MKT['指標']||{}, ya=MKT['長線乖離']||{}, kp=MKT['關鍵價位']||{}, bx=MKT['乖離']||{};
+  const chg=Number(rg(MKT,'漲跌',0))||0;
+  let h=`<div class="imp-bar">
+    <button class="imp-btn" onclick="toggleImportMkt()">📋 貼上今日大盤（從大盤分析複製來）</button>
+    <div class="imp-panel" id="impPanelMkt" style="display:none">
+      <textarea class="imp-box" id="impBoxMkt" placeholder="把「大盤分析」那顆「複製今日大盤」複製到的內容，貼在這裡"></textarea>
+      <button class="imp-do" onclick="doImportMkt()">匯入</button>
+    </div>
+  </div>`;
+  h+=`<div class="rpt-date">資料日期：${rg(MKT,'日期')}　產出 ${rg(MKT,'產出時間','')}</div>`;
+  h+= src==='cloud' ? `<div class="rpt-src live">● 已同步雲端（手機／電腦都看得到）</div>`
+     : src==='paste' ? `<div class="rpt-src live">● 已匯入今日大盤</div>`
+     : `<div class="rpt-src cache">● 內建預覽資料（貼上今日大盤後即更新）</div>`;
+  h+=`<div class="ov">
+    <div class="ov-bias" style="color:${biasColor(wd)}">波段 ${wd}</div>
+    <div style="text-align:center;color:#9fb6cc;font-size:14px;margin-top:-4px">
+      加權指數 <b style="color:#fff">${rg(MKT,'收盤')}</b>
+      <span style="color:${chg>=0?'#30d158':'#ff453a'}">${chg>=0?'▲':'▼'}${Math.abs(chg)} (${rg(MKT,'漲跌幅')}%)</span>
+    </div>
+    <div style="margin:14px 6px 2px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <span style="color:#9fb6cc;font-size:13px">🌡 大盤溫度</span>
+        <span><b style="font-size:22px;color:${tempColor(tb)}">${tsc}</b><span style="color:#62788f;font-size:13px">/100　${tb}</span></span>
+      </div>
+      <div style="background:#16273b;border-radius:6px;height:12px;overflow:hidden">
+        <div style="width:${Math.max(0,Math.min(100,tsc))}%;height:100%;background:${tempColor(tb)}"></div>
+      </div>
+      <div style="color:#cfe0f0;font-size:13px;margin-top:8px;line-height:1.55">${rg(t,'操作含義','')}</div>`;
+  const dpath=rg(t,'降溫路徑','—');
+  if(dpath!=='—' && dpath!=='未明顯下跌'){
+    h+=`<div style="color:#9fb6cc;font-size:12px;margin-top:4px">降溫路徑：${dpath}／止穩：${rg(t,'止穩')}</div>`;
+  }
+  h+=`</div></div>`;
+  h+=`<div class="card">
+    <div class="card-meta"><span>波段方向 <b style="color:${biasColor(wd)}">${wd}</b>（分 ${rg(MKT,'波段分數')}／信心 ${rg(MKT,'信心')}）</span></div>
+    <div class="card-meta"><span>短線時機 <b style="color:${shortColor(sd)}">${sd}</b></span></div>
+    <div class="card-meta" style="color:#cfe0f0;line-height:1.6">操作基調：${rg(MKT,'操作基調','')}</div>
+  </div>`;
+  h+=`<div class="card">
+    <div class="card-meta"><span>趨勢　週<b>${rg(tr,'週')}</b>　日<b>${rg(tr,'日')}</b>　60分<b>${rg(tr,'60分')}</b>　${rg(tr,'突破訊號','')}</span></div>
+    <div class="card-meta"><span>均線排列 <b>${rg(ma,'排列')}</b></span></div>
+    <div class="card-meta"><span>MA5 <b>${rg(ma,'MA5')}</b>／MA10 <b>${rg(ma,'MA10')}</b>／MA20 <b>${rg(ma,'MA20')}</b>／季線 <b>${rg(ma,'季線')}</b>／年線 <b>${rg(ma,'年線')}</b></span></div>
+    <div class="card-meta"><span>帶寬 <b>${rg(ma,'帶寬')}</b></span></div>
+    <div class="card-meta"><span>長線 距年線 <b>${rg(ya,'距年線')}%</b>（分位${rg(ya,'分位')}%）</span></div>
+  </div>`;
+  h+=`<div class="card">
+    <div class="card-meta"><span>KD <b>${rg(ind,'KD')}</b>（${rg(ind,'KD狀態')}）　RSI <b>${rg(ind,'RSI')}</b>　MACD <b>${rg(ind,'MACD')}</b></span></div>
+    <div class="card-meta"><span>乖離 10日 <b>${rg(bx,'10日')}%</b>（分位${rg(bx,'分位')}%）→ ${rg(bx,'警示')}</span></div>
+  </div>`;
+  h+=`<div class="card">
+    <div class="card-meta"><span>壓力 <b class="c-sell">${(kp['壓力']||[]).join('、')||'−'}</b></span></div>
+    <div class="card-meta"><span>支撐 <b class="c-buy">${(kp['支撐']||[]).join('、')||'−'}</b></span></div>
+    <div class="card-meta"><span>站上 <b class="c-buy">${rg(kp,'轉多關卡')}</b> 偏多轉強｜跌破 <b class="c-sell">${rg(kp,'轉空關卡')}</b> 偏空轉弱</span></div>
+  </div>`;
+  const warns=MKT['警示']||[];
+  h+=`<div class="card"><div class="card-meta" style="color:#ffd479">⚠ 警示</div>`;
+  h+= warns.length? warns.map(w=>`<div class="card-meta" style="color:#cfe0f0;line-height:1.5">• ${w}</div>`).join('') : '<div class="card-meta">無</div>';
+  h+=`</div>`;
+  m.innerHTML=h;
+}
+
 function selectView(v){
   const track=(v==='track');
+  const mkt=(v==='大盤');
   document.querySelectorAll('.bottomnav button').forEach(b=>b.classList.toggle('on', b.dataset.view===v));
   document.getElementById('tabs').style.display     = track?'flex':'none';
   document.getElementById('main').style.display     = track?'block':'none';
   document.getElementById('trackBtns').style.display= track?'flex':'none';
-  document.getElementById('rptMain').style.display  = track?'none':'block';
+  document.getElementById('rptMain').style.display  = (track||mkt)?'none':'block';
+  document.getElementById('mktMain').style.display  = mkt?'block':'none';
   window.scrollTo(0,0);
   if(track){ render(); return; }
+  if(mkt){ if(!mktLoaded){ loadMarket(); } else { renderMkt(); } return; }
   rptTab=v;
   if(!rptLoaded){ loadReport(); } else { renderRpt(); }
 }

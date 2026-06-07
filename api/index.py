@@ -228,6 +228,23 @@ def sync_save():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/report-load', methods=['GET'])
+def report_load():
+    try:
+        r = http_requests.get(GAS_ENDPOINT, params={'action': 'loadreport'}, timeout=20)
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/report-save', methods=['POST'])
+def report_save():
+    try:
+        report = request.json.get('report', '')
+        r = http_requests.post(GAS_ENDPOINT, data={'action': 'savereport', 'payload': report}, timeout=30)
+        return jsonify(r.json())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="zh-TW">
@@ -2946,8 +2963,21 @@ function renderRptTabs(){
 }
 function rptSw(t){ rptTab=t; renderRpt(); window.scrollTo(0,0); }
 
-function loadReport(){
+async function loadReport(){
   rptLoaded=true;
+  const m=document.getElementById('rptMain');
+  m.innerHTML='<div class="loading">載入每日戰報中…</div>';
+  // 先試雲端（這樣手機也能讀到電腦貼的）
+  try{
+    const r=await fetch('/api/report-load',{signal:AbortSignal.timeout(20000)});
+    const j=await r.json();
+    if(j && j.report){
+      RPT=JSON.parse(j.report); RPT.__src='cloud';
+      try{ localStorage.setItem(RPT_KEY, j.report); }catch(e){}
+      renderRpt(); return;
+    }
+  }catch(e){}
+  // 雲端沒有 → 本機 → 內建預覽
   try{
     const saved=localStorage.getItem(RPT_KEY);
     if(saved){ RPT=JSON.parse(saved); RPT.__src='paste'; }
@@ -2965,17 +2995,25 @@ function doImport(){
   if(!t){ alert('請先貼上 V25 複製來的內容'); return; }
   let obj;
   try{ obj=JSON.parse(t); }catch(e){ alert('格式不對，請回 V25 重新按「複製今日戰報」再貼一次'); return; }
-  try{ localStorage.setItem(RPT_KEY, JSON.stringify(obj)); }catch(e){}
+  const str=JSON.stringify(obj);
+  try{ localStorage.setItem(RPT_KEY, str); }catch(e){}
   RPT=obj; RPT.__src='paste';
   rptTab='市場總覽';
   renderRpt();
-  alert('✅ 已匯入今日戰報');
+  // 背景同步到雲端（讓手機也讀得到）
+  fetch('/api/report-save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({report:str})})
+    .then(r=>r.json())
+    .then(j=>{
+      if(j && j.ok){ RPT.__src='cloud'; if(document.getElementById('rptMain').style.display!=='none') renderRpt(); }
+      else { alert('已匯入，但雲端同步失敗，手機可能看不到'); }
+    })
+    .catch(e=>{ alert('已匯入，但雲端同步失敗，手機可能看不到'); });
 }
 
 function renderRpt(){
   const m=document.getElementById('rptMain');
   if(!RPT){ loadReport(); return; }
-  const paste = RPT.__src==='paste';
+  const src = RPT.__src;
   let h=`<div class="imp-bar">
     <button class="imp-btn" onclick="toggleImport()">📋 貼上今日戰報（從 V25 複製來）</button>
     <div class="imp-panel" id="impPanel" style="display:none">
@@ -2984,8 +3022,9 @@ function renderRpt(){
     </div>
   </div>`;
   h+=`<div class="rpt-date">資料日期：${rg(RPT,'日期')}　產出 ${rg(RPT,'產出時間','')}</div>`;
-  h+= paste ? `<div class="rpt-src live">● 已匯入今日戰報</div>`
-            : `<div class="rpt-src cache">● 內建預覽資料（貼上今日戰報後即更新）</div>`;
+  h+= src==='cloud' ? `<div class="rpt-src live">● 已同步雲端（手機／電腦都看得到）</div>`
+     : src==='paste' ? `<div class="rpt-src live">● 已匯入今日戰報</div>`
+     : `<div class="rpt-src cache">● 內建預覽資料（貼上今日戰報後即更新）</div>`;
   if(rptTab==='市場總覽')      h+=rptMarket();
   else if(rptTab==='持股現況') h+=rptHold();
   else if(rptTab==='今日精選') h+=rptPick();

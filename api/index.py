@@ -757,9 +757,9 @@ function rc(s,gi,si,readonly=false){
       </div>
     </div>
     <div class="card-meta">${dtag}${wtag}</div>
-    <div class="card-meta cl-meta" style="padding-bottom:7px;border-bottom:1px dashed rgba(122,168,208,.18)">
-      ${s.prev2_price?`<span>前日收 <b class="ma-na">${s.prev2_price}</b></span>`:''}
-      ${s.prev_price?`<span>昨日收 <b class="${maColor(s.prev_price,s.prev2_price)}">${s.prev_price}</b></span>`:''}
+    <div class="card-meta cl-meta" style="padding-bottom:7px;border-bottom:1px dashed rgba(122,168,208,.18);font-size:13.5px">
+      ${s.prev2_price?`<span style="color:#caa84a">前日收 <b style="color:#ffd60a;font-weight:800">${s.prev2_price}</b></span>`:''}
+      ${s.prev_price?`<span style="color:#caa84a">昨日收 <b style="color:#ffd60a;font-weight:800">${s.prev_price}</b></span>`:''}
     </div>
     <div class="card-meta ma-meta">
       ${ma(s.ma5,'MA5',s.price,s.near_ma5)}

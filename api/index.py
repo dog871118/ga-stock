@@ -3294,6 +3294,7 @@ function rptHold(){
       ${rg(s,'波段位置','−')!=='−'?`<span>波段位置 <b>${rg(s,'波段位置')}</b></span>`:''}
       ${rg(s,'回檔健康','−')!=='−'?`<span>回檔 <b>${rg(s,'回檔健康')}</b></span>`:''}
     </div>
+    ${rg(s,'乖離','−')!=='−'?`<div class="card-meta"><span>乖離 <b>${rg(s,'乖離')}</b></span></div>`:''}
     <div class="card-meta">
       <span>支撐 <b>${rg(s,'支撐')}</b></span>
       <span>壓力 <b>${rg(s,'壓力')}</b></span>
@@ -3301,6 +3302,7 @@ function rptHold(){
       <span>目標 <b class="c-buy">${rg(s,'目標')}</b></span>
     </div>
     ${rg(s,'訊號說明','−')!=='−'?`<div class="card-meta"><span>訊號 <b style="color:#cdd9e5;font-weight:500">${rg(s,'訊號說明')}</b></span></div>`:''}
+    ${(rg(s,'假跌破','正常')!=='正常'&&rg(s,'假跌破','−')!=='−')?`<div class="card-meta"><span>假跌破 <b style="color:#ffd479">${rg(s,'假跌破')}</b>　${rg(s,'假跌破說明','')}</span></div>`:''}
     ${rg(s,'波段操作','−')!=='−'?`<div class="card-meta"><span>波段 <b style="color:#cdd9e5;font-weight:500">${rg(s,'波段操作')}</b></span></div>`:''}
     ${rg(s,'均線提醒','−')!=='−'?`<div class="card-meta"><span style="color:#ffd479">⚡ ${rg(s,'均線提醒')}</span></div>`:''}
     <div class="card-meta"><span>明日 <b>${rg(s,'明日預測')}</b>　${rg(s,'明日操作','')}</span></div>

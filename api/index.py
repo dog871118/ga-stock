@@ -3282,13 +3282,27 @@ function rptHold(){
     <div class="card-row"><div class="card-stk"><span class="card-nm">${rg(s,'名稱')}</span>
       <span class="card-cd">${rg(s,'代號')}</span>${rsig(rg(s,'訊號'))}</div>
       <span class="card-px">${rg(s,'現價')}</span></div>
+    ${rg(s,'RS60','−')!=='−'?`<div class="card-meta">
+      <span>RS20 <b>${rg(s,'RS20')}</b></span>
+      <span>RS60 <b>${rg(s,'RS60')}</b></span>
+      <span>RS120 <b>${rg(s,'RS120')}</b></span>
+      <span>RS週 <b>${rg(s,'RS週')}</b></span>
+    </div>`:''}
     <div class="card-meta">
       <span>慣性 <b>${rg(s,'均線慣性')}</b></span>
-      <span>停損 <b class="c-sell">${rg(s,'停損')}</b></span>
+      ${rg(s,'長期趨勢','−')!=='−'?`<span>長期 <b>${rg(s,'長期趨勢')}</b></span>`:''}
+      ${rg(s,'波段位置','−')!=='−'?`<span>波段位置 <b>${rg(s,'波段位置')}</b></span>`:''}
+      ${rg(s,'回檔健康','−')!=='−'?`<span>回檔 <b>${rg(s,'回檔健康')}</b></span>`:''}
+    </div>
+    <div class="card-meta">
       <span>支撐 <b>${rg(s,'支撐')}</b></span>
       <span>壓力 <b>${rg(s,'壓力')}</b></span>
+      <span>停損 <b class="c-sell">${rg(s,'停損')}</b></span>
       <span>目標 <b class="c-buy">${rg(s,'目標')}</b></span>
     </div>
+    ${rg(s,'訊號說明','−')!=='−'?`<div class="card-meta"><span>訊號 <b style="color:#cdd9e5;font-weight:500">${rg(s,'訊號說明')}</b></span></div>`:''}
+    ${rg(s,'波段操作','−')!=='−'?`<div class="card-meta"><span>波段 <b style="color:#cdd9e5;font-weight:500">${rg(s,'波段操作')}</b></span></div>`:''}
+    ${rg(s,'均線提醒','−')!=='−'?`<div class="card-meta"><span style="color:#ffd479">⚡ ${rg(s,'均線提醒')}</span></div>`:''}
     <div class="card-meta"><span>明日 <b>${rg(s,'明日預測')}</b>　${rg(s,'明日操作','')}</span></div>
   </div>`).join('');
 }

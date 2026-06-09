@@ -802,7 +802,7 @@ async function scan(gi){
     stocks.forEach(s=>{
       const r=data[s.id];
       if(r){
-        s.price=r.price; s.prev_price=r.prev_price;
+        s.price=r.price; s.prev_price=r.prev_price; s.prev2_price=r.prev2_price;
         s.ma5=r.ma5; s.ma10=r.ma10; s.ma20=r.ma20; s.ma60d=r.ma60d; s.ma60k240=r.ma60k240;
         s.near_ma5=r.near_ma5; s.near_ma10=r.near_ma10;
         s.near_ma20=r.near_ma20; s.near_ma60d=r.near_ma60d; s.near_ma60=r.near_ma60;

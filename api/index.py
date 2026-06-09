@@ -142,8 +142,9 @@ def get_signals(stock_id):
         except:
             pass
 
-        # 昨日收盤價
-        prev_price = round(float(close_d.iloc[-2]), 2) if len(close_d) >= 2 else None
+        # 昨日收盤價（T-1）、前日收盤價（T-2）
+        prev_price  = round(float(close_d.iloc[-2]), 2) if len(close_d) >= 2 else None
+        prev2_price = round(float(close_d.iloc[-3]), 2) if len(close_d) >= 3 else None
 
         # 接近均線判斷（3%以內）
         def near(p, ma):
@@ -154,6 +155,7 @@ def get_signals(stock_id):
         return {
             'price':      price,
             'prev_price': prev_price,
+            'prev2_price': prev2_price,
             'name':       stock_name,
             'ma5':        ma5,
             'ma10':       ma10,
@@ -373,12 +375,12 @@ html, body {
 .ma-item  { display: flex; flex-direction: column; align-items: flex-start; }
 .ma-val   { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .ma-lbl   { font-size: 11px; color: #38bdf8; }
-.c-buy  { color: #34c759; }
+.c-buy  { color: #ff453a; }   /* 台股：買進=漲=紅 */
 .c-hold { color: #ffd60a; }
-.c-sell { color: #ff453a; }
+.c-sell { color: #30d158; }   /* 台股：賣出=跌=綠 */
 .c-idle { color: #ffffff; }
-.ma-up  { color: #34c759; }
-.ma-dn  { color: #ff453a; }
+.ma-up  { color: #ff453a; }   /* 站上均線=偏多=紅 */
+.ma-dn  { color: #30d158; }   /* 跌破均線=偏空=綠 */
 .ma-na  { color: #ffffff; }
 .r-del {
   width: 24px; text-align: right;
@@ -412,8 +414,8 @@ html, body {
 .card-meta { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: #7aa8d0; }
 .card-meta b { color: #ffffff; font-weight: 600; }
 .tg { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 5px; font-weight: 700; }
-.tg-buy { background: rgba(52,199,89,.18); color: #34c759; }
-.tg-sell { background: rgba(255,69,58,.18); color: #ff453a; }
+.tg-buy { background: rgba(255,69,58,.18); color: #ff453a; }
+.tg-sell { background: rgba(48,209,88,.18); color: #30d158; }
 .tg-hold { background: rgba(255,214,10,.18); color: #ffd60a; }
 .tg-go { background: rgba(56,189,248,.18); color: #38bdf8; }
 .tg-rise { background: rgba(255,214,10,.22); color: #ffd60a; }
@@ -735,6 +737,13 @@ function rc(s,gi,si,readonly=false){
     ? `<span>${lbl} <b class="${maColor(p,val)}">${val}${near?' 😊':''}</b></span>`
     : `<span>${lbl} <b class="ma-na">—</b></span>`;
   const down = d.action==='持有' && s.prev_price && s.price < s.prev_price;
+  let chgHtml='';
+  if(s.prev_price){
+    const diff=Math.round((s.price-s.prev_price)*100)/100;
+    const pct=Math.round((s.price/s.prev_price-1)*10000)/100;
+    const up=diff>=0;
+    chgHtml=`<div style="font-size:12px;font-weight:700;color:${up?'#ff453a':'#30d158'}">${up?'▲':'▼'}${Math.abs(diff)} (${up?'+':''}${pct}%)</div>`;
+  }
   return `<div class="card${down?' card-down':''}">
     ${delBtn}
     <div class="card-row">
@@ -742,9 +751,16 @@ function rc(s,gi,si,readonly=false){
         <span class="card-nm">${s.name||s.id}</span>
         <span class="card-cd">${s.id}</span>
       </div>
-      <span class="card-px">${s.price}</span>
+      <div style="text-align:right">
+        <div class="card-px">${s.price}</div>
+        ${chgHtml}
+      </div>
     </div>
     <div class="card-meta">${dtag}${wtag}</div>
+    <div class="card-meta cl-meta" style="padding-bottom:7px;border-bottom:1px dashed rgba(122,168,208,.18)">
+      ${s.prev2_price?`<span>前日收 <b class="ma-na">${s.prev2_price}</b></span>`:''}
+      ${s.prev_price?`<span>昨日收 <b class="${maColor(s.prev_price,s.prev2_price)}">${s.prev_price}</b></span>`:''}
+    </div>
     <div class="card-meta ma-meta">
       ${ma(s.ma5,'MA5',s.price,s.near_ma5)}
       ${ma(s.ma10,'MA10',s.price,s.near_ma10)}
@@ -912,7 +928,7 @@ const EMBEDDED_RPT = {
  "產出時間": "2026-06-05 14:30",
  "日期": "2026-06-05",
  "市場總覽": {
-  "市場偏向": "偏多 🟢",
+  "市場偏向": "偏多 🔴",
   "多方族群數": 19,
   "空方族群數": 7,
   "起漲股數": 54,
@@ -2967,9 +2983,9 @@ const MKT_KEY='donG_mkt';
 let MKT=null, mktLoaded=false;
 const EMBEDDED_MKT={"日期":"2026-06-07","產出時間":"2026-06-07 15:27","收盤":45070.94,"漲跌":-606.52,"漲跌幅":-1.33,"波段方向":"偏多","波段分數":100,"信心":"強","短線時機":"轉弱","短線註記":["下跌 -1.33%","向下跳空","KD 高檔死叉","RSI 頂背離","高檔短線轉弱"],"操作基調":"波段方向偏多不變，但短線轉弱、拉回中 → 今天別追高，等回穩或回檔到 MA10／MA20 找買點；跌破季線才轉保守。","波段溫度":{"分數":97,"等級":"過熱","組成":{"距年線分位":99,"帶寬分位":99,"60日乖離分位":90}},"短線溫度":{"分數":66,"等級":"偏熱","組成":{"RSI":71,"K":76,"10日乖離分位":45,"區間位置":78}},"組合判讀":"波段熱 + 短線過熱轉弱 → 漲多回檔(非出場)：今天別追高，等拉回 MA10／MA20 找買點；趨勢未破前不空。","降溫路徑":"未明顯下跌","止穩":"—","趨勢":{"週":"多頭","日":"盤整","60分":"盤整","突破訊號":"⬜觀望"},"均線":{"MA5":45621,"MA10":44790,"MA20":43031,"季線":38316,"半年線":34582,"年線":29806,"排列":"多頭排列","帶寬":"發散(分位99%) ← 趨勢明確/延伸"},"長線乖離":{"距年線":51.2,"分位":99},"量價":"量價中性","OBV":"上升","量能":{"位階":"正常(1.0倍)","判讀":"—","量價背離":"無","今量對20日均量":1.0,"量分位":50},"乖離":{"10日":0.63,"20日":4.74,"60日":12.5,"10日分位":45,"20日分位":70,"60日分位":88,"警示":"正常"},"指標":{"KD":"76/83","KD狀態":"中性・死亡交叉","RSI":71,"MACD":"多方・柱狀轉弱","背離":{"MACD":"無","RSI":"頂背離","OBV":"無"}},"結構":{"區間位置":78,"創60日新高":false,"創60日新低":false,"缺口":"向下跳空"},"K線":"無明顯型態","關鍵價位":{"壓力":[45621,46459],"支撐":[44790,43031,40021],"轉多關卡":45621,"轉空關卡":38316,"短線轉強":45350,"短線轉弱":44950},"極值偵測":"🔺 噴出末端警戒：結構極熱 + 出現轉弱/出貨/背離 → 慎防急速回檔（趨勢未破前不空，但別追、減碼控管）","警示":["短線轉弱：下跌 -1.33%、向下跳空、KD 高檔死叉、RSI 頂背離、高檔短線轉弱 → 今天不宜追高","結構過熱(波段溫度97) + 短線轉弱 → 回檔風險升高，別追高、控管倉位","RSI 頂背離 → 漲勢動能轉弱，留意反轉"]};
 
-function biasColor(d){ return d==='偏多'?'#30d158': d==='偏空'?'#ff453a':'#8e8e93'; }
+function biasColor(d){ return d==='偏多'?'#ff453a': d==='偏空'?'#30d158':'#8e8e93'; }  // 台股：偏多=紅、偏空=綠
 function tempColor(b){ return b==='過熱'?'#ff453a': b==='偏熱'?'#ff9f0a': b==='中性'?'#8e8e93': b==='偏冷'?'#5ac8fa':'#0a84ff'; }
-function shortColor(d){ return d==='轉強'?'#30d158': d==='轉弱'?'#ff453a':'#8e8e93'; }
+function shortColor(d){ return d==='轉強'?'#ff453a': d==='轉弱'?'#30d158':'#8e8e93'; }  // 台股：轉強=紅、轉弱=綠
 
 async function loadMarket(){
   mktLoaded=true;
@@ -3056,7 +3072,7 @@ function renderMkt(){
     <div class="ov-bias" style="color:${biasColor(wd)}">波段 ${wd}</div>
     <div style="text-align:center;color:#9fb6cc;font-size:14px;margin-top:-4px">
       加權指數 <b style="color:#fff">${rg(MKT,'收盤')}</b>
-      <span style="color:${chg>=0?'#30d158':'#ff453a'}">${chg>=0?'▲':'▼'}${Math.abs(chg)} (${rg(MKT,'漲跌幅')}%)</span>
+      <span style="color:${chg>=0?'#ff453a':'#30d158'}">${chg>=0?'▲':'▼'}${Math.abs(chg)} (${rg(MKT,'漲跌幅')}%)</span>
     </div>`;
   if(hasDual){
     h+=tbar('波段溫度',swSc,swBd,'中長線結構');

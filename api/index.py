@@ -3275,6 +3275,37 @@ function rptMarket(){
   return h;
 }
 
+// ===== V27：持股五段式分析（波段方向/多週期/撐壓/交易計畫/明日觀察）=====
+function f5tg(btn){
+  const e=btn.parentElement.lastElementChild;
+  const open=e.style.display==='none';
+  e.style.display=open?'block':'none';
+  btn.textContent=open?'▲ 收合五段分析':'▼ 五段分析';
+}
+function fiveBlock(s){
+  const f=s['五段'];
+  if(!f||typeof f!=='object') return '';
+  const secs=[['一、波段方向','波段方向'],['二、多週期細看','多週期'],['三、撐壓','撐壓'],['四、交易計畫','交易計畫'],['五、明日觀察','明日觀察']];
+  const NL=String.fromCharCode(10);
+  let inner='';
+  for(const it of secs){
+    const v=f[it[1]];
+    if(!v) continue;
+    const body=String(v).split(NL).map(x=>'<div style="margin:2px 0">'+x+'</div>').join('');
+    inner+='<div style="margin:8px 0 2px"><div style="color:#38bdf8;font-weight:700;font-size:13px;margin-bottom:3px">◤'+it[0]+'◢</div><div style="color:#cdd9e5;font-size:13px;line-height:1.65">'+body+'</div></div>';
+  }
+  if(!inner) return '';
+  const wkv=String(rg(s,'週線環境','−'));
+  let wk='';
+  if(wkv!=='−'){
+    const col=wkv.includes('強')?'#ff6b6b':(wkv.includes('弱')?'#34c759':'#ffd479');
+    wk='<span style="margin-left:8px;color:'+col+';font-size:12px;font-weight:700">週線'+wkv+'</span>';
+  }
+  return '<div style="margin-top:8px;border-top:1px solid #1e3a5f;padding-top:8px">'
+    +'<button onclick="f5tg(this)" style="background:#132338;color:#38bdf8;border:1px solid #1e3a5f;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer">▼ 五段分析</button>'+wk
+    +'<div style="display:none">'+inner+'</div></div>';
+}
+
 function rptHold(){
   const arr=RPT['持股現況']||[];
   if(!arr.length) return '<div class="empty">無持股資料</div>';
@@ -3306,6 +3337,7 @@ function rptHold(){
     ${rg(s,'波段操作','−')!=='−'?`<div class="card-meta"><span>波段 <b style="color:#cdd9e5;font-weight:500">${rg(s,'波段操作')}</b></span></div>`:''}
     ${rg(s,'均線提醒','−')!=='−'?`<div class="card-meta"><span style="color:#ffd479">⚡ ${rg(s,'均線提醒')}</span></div>`:''}
     <div class="card-meta"><span>明日 <b>${rg(s,'明日預測')}</b>　${rg(s,'明日操作','')}</span></div>
+    ${fiveBlock(s)}
   </div>`).join('');
 }
 

@@ -518,7 +518,7 @@ html, body {
 
 <script>
 const GK = 'ga_g_v5', HK = 'ga_h_v5', SK = 'ga_sig_v5';
-const DN = ['自選群組1','自選群組2','自選群組3','自選群組4'];
+const DN = ['自選群組1','自選群組2','自選群組3','自選群組4','自選群組5','自選群組6','自選群組7','自選群組8'];
 const SPECIAL_GROUPS = [
   { name: '均線買點', idx: 5 },
   { name: '回踩買點', idx: 6 },
@@ -528,9 +528,16 @@ const SPECIAL_GROUPS = [
 function lgr() {
   try {
     const d=JSON.parse(localStorage.getItem(GK));
-    if(d && d.length===4) return d;
-    // 舊版5個群組，取前4個
-    if(d && d.length===5) return d.slice(0,4);
+    // 已是8群組 → 直接用
+    if(d && d.length===8) return d;
+    // 舊版4群組（你原本的自選）→ 保留前4個，後面補4個空群組，湊成8個
+    if(d && d.length>=1 && d.length<8){
+      const out = d.slice(0,8);
+      for(let i=out.length;i<8;i++) out.push({name:DN[i],stocks:[]});
+      return out;
+    }
+    // 更舊版5群組 → 取前4，補到8
+    if(d && d.length>8) return d.slice(0,8);
   } catch(e){}
   return DN.map(n=>({name:n,stocks:[]}));
 }
@@ -656,7 +663,7 @@ function renderSpecial(type) {
   });
 
   let h = `<div class="grp-bar"><div class="grp-name-inp">${title}</div></div>
-  <div class="upd-time">掃描前5個群組後自動更新</div>`;
+  <div class="upd-time">掃描前8個群組後自動更新</div>`;
 
   if (matched.length === 0) {
     h += `<div class="empty">目前無符合條件的股票</div>`;
@@ -684,14 +691,14 @@ function renderSpecial(type) {
 function render(){
   renderTabs();
   // 特殊群組
-  if(cur === 4) { renderSpecial('buy');     return; }
-  if(cur === 5) { renderSpecial('sell');    return; }
-  if(cur === 6) { renderSpecial('hold');    return; }
-  if(cur === 7) { renderSpecial('idle');    return; }
-  if(cur === 8) { renderSpecial('change');  return; }
-  if(cur === 9) { renderSpecial('near');    return; }
-  if(cur === 10){ renderSpecial('down');    return; }
-  if(cur === 11){ renderSpecial('newhigh'); return; }
+  if(cur === 8) { renderSpecial('buy');     return; }
+  if(cur === 9) { renderSpecial('sell');    return; }
+  if(cur === 10){ renderSpecial('hold');    return; }
+  if(cur === 11){ renderSpecial('idle');    return; }
+  if(cur === 12){ renderSpecial('change');  return; }
+  if(cur === 13){ renderSpecial('near');    return; }
+  if(cur === 14){ renderSpecial('down');    return; }
+  if(cur === 15){ renderSpecial('newhigh'); return; }
   const g=groups[cur];
   let h=`
   <div class="grp-bar">
@@ -827,13 +834,13 @@ async function scan(gi){
 }
 
 async function autoScan(){
-  for(let i=0;i<4;i++){
+  for(let i=0;i<8;i++){
     if(groups[i].stocks&&groups[i].stocks.length>0){
       cur=i; render(); await scan(i);
     }
   }
   // 掃描完後，如果在特殊群組頁則重新渲染
-  if(cur<4) {
+  if(cur<8) {
     cur=groups.findIndex(g=>g.stocks&&g.stocks.length>0);
     if(cur<0) cur=0;
   }
@@ -844,7 +851,7 @@ async function saveCloud(){
   const btn=document.getElementById('btnSave');
   btn.textContent='儲存中…'; btn.disabled=true;
   const rows=[];
-  groups.slice(0,4).forEach((g,gi)=>{
+  groups.slice(0,8).forEach((g,gi)=>{
     if(g.stocks&&g.stocks.length>0) g.stocks.forEach(s=>rows.push([gi,g.name,s.id]));
     else rows.push([gi,g.name,'']);
   });
@@ -870,11 +877,11 @@ async function loadCloud(){
     const ng=DN.map((n,i)=>({name:n,stocks:[]}));
     rows.forEach(row=>{
       const gi=parseInt(row[0]);
-      if(gi>=0&&gi<4 && row[1]) ng[gi].name=row[1];
+      if(gi>=0&&gi<8 && row[1]) ng[gi].name=row[1];
     });
     rows.filter(r=>r&&String(r[2]||'').trim()!=='').forEach(row=>{
       const gi=parseInt(row[0]), sid=String(row[2]||'').trim().toUpperCase();
-      if(gi>=0&&gi<4 && sid && !ng[gi].stocks.find(s=>s.id===sid)) ng[gi].stocks.push({id:sid});
+      if(gi>=0&&gi<8 && sid && !ng[gi].stocks.find(s=>s.id===sid)) ng[gi].stocks.push({id:sid});
     });
     groups=ng; sgr(); 
     // 強制清掉舊版 key，避免下次讀到過期資料

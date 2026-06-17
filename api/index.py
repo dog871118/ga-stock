@@ -552,6 +552,8 @@ function allGroups() {
     { name:'均線買點', stocks:[], special:'near' },
     { name:'回踩買點', stocks:[], special:'down' },
     { name:'創新高',   stocks:[], special:'newhigh' },
+    { name:'本日漲停', stocks:[], special:'limitup' },
+    { name:'本日跌停', stocks:[], special:'limitdown' },
   ];
 }
 function sgr() { localStorage.setItem(GK,JSON.stringify(groups)); }
@@ -621,6 +623,65 @@ function sortBySignal(arr) {
     const db = b.daily ? sigOrder(b.daily.action) : 4;
     return da - db;
   });
+}
+
+// ===== 本日漲停／跌停（代號來自每日戰報，卡片走與自選相同的 /api/batch 管道）=====
+// 這兩組獨立於可編輯群組(1~8)，不會被 9~16 的自動分類掃到
+function getLimitCodes(dir){
+  let r = (typeof RPT!=='undefined' && RPT) ? RPT : null;
+  if(!r){ try{ const s=localStorage.getItem(RPT_KEY); if(s) r=JSON.parse(s); }catch(e){} }
+  if(!r) return null;                       // 連戰報都還沒匯入
+  const arr = dir==='up' ? (r['漲停']||[]) : (r['跌停']||[]);
+  return arr.map(x => typeof x==='string' ? x : (x.t||x.代號||x.id||x.code||'')).filter(Boolean);
+}
+async function renderLimit(dir){
+  renderTabs();
+  const title = dir==='up' ? '本日漲停' : '本日跌停';
+  const myTab = dir==='up' ? 16 : 17;
+  const codes = getLimitCodes(dir);
+  const main = document.getElementById('main');
+  let rptInfo = '';
+  try{ rptInfo = (typeof RPT!=='undefined' && RPT) ? (RPT['日期']||'') : ''; }catch(e){}
+  if(codes === null){
+    main.innerHTML = `<div class="grp-bar"><div class="grp-name-inp">${title}</div></div>
+      <div class="empty">尚未匯入今日戰報，無法取得${dir==='up'?'漲停':'跌停'}清單。<br>
+      請先到「總覽 / 持股」分頁貼上今日戰報（V27 複製來），再回到本頁。</div>`;
+    return;
+  }
+  if(codes.length === 0){
+    main.innerHTML = `<div class="grp-bar"><div class="grp-name-inp">${title}</div></div>
+      <div class="upd-time">資料日期：${rptInfo}</div>
+      <div class="empty">今日無${dir==='up'?'漲停':'跌停'}股票</div>`;
+    return;
+  }
+  main.innerHTML = `<div class="grp-bar"><div class="grp-name-inp">${title}（${codes.length} 檔）</div></div>
+    <div class="upd-time" id="limUpd">載入中… 0/${codes.length}（資料日期 ${rptInfo}）</div>
+    <div class="tbl-hdr">
+      <span class="col-id">代號</span><span class="col-price">收盤價</span>
+      <span class="col-sig">訊號／均線</span><span class="col-del"></span>
+    </div>
+    <div id="limList"></div>`;
+  const listEl = document.getElementById('limList');
+  const updEl  = document.getElementById('limUpd');
+  const got = [];
+  const CH = 12;                            // 一次抓12檔，邊抓邊顯示
+  for(let i=0;i<codes.length;i+=CH){
+    if(cur !== myTab) return;               // 使用者切走就停止
+    const chunk = codes.slice(i, i+CH);
+    try{
+      const res = await fetch('/api/batch?ids='+encodeURIComponent(chunk.join(',')));
+      const data = await res.json();
+      chunk.forEach(full=>{
+        const r = data[full] || data[full.toUpperCase()];
+        if(r){ got.push({ ...r, id: String(full).split('.')[0] }); }
+      });
+    }catch(e){}
+    const sorted = sortBySignal(got);
+    listEl.innerHTML = sorted.map((s,si)=>rc(s, myTab, si, true)).join('');
+    if(updEl) updEl.textContent = `載入中… ${Math.min(i+CH,codes.length)}/${codes.length}（資料日期 ${rptInfo}）`;
+  }
+  if(updEl) updEl.textContent = `資料日期：${rptInfo}　共 ${got.length} 檔　更新：${ts()}`;
+  if(got.length===0) listEl.innerHTML = `<div class="empty">查無資料（可能代號已下市或暫停交易）</div>`;
 }
 
 function renderSpecial(type) {
@@ -699,6 +760,8 @@ function render(){
   if(cur === 13){ renderSpecial('near');    return; }
   if(cur === 14){ renderSpecial('down');    return; }
   if(cur === 15){ renderSpecial('newhigh'); return; }
+  if(cur === 16){ renderLimit('up');        return; }
+  if(cur === 17){ renderLimit('down');      return; }
   const g=groups[cur];
   let h=`
   <div class="grp-bar">

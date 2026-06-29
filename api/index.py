@@ -195,9 +195,12 @@ def batch_check():
     ids = [x.strip() for x in ids_raw.split(',') if x.strip()]
     result = {}
     for sid in ids:
-        data = get_signals(sid)
-        if data:
-            result[sid] = data
+        try:
+            data = get_signals(sid)
+            if data:
+                result[sid] = data
+        except Exception:
+            pass  # 單支股票失敗，略過繼續查下一支
     return jsonify(result)
 
 
@@ -866,7 +869,8 @@ async function scan(gi){
   const tbl=document.getElementById('main');
   const ids=stocks.map(s=>s.id).join(',');
   try{
-    const res=await fetch('/api/batch?ids='+encodeURIComponent(ids));
+    const res=await fetch('/api/batch?ids='+encodeURIComponent(ids),{signal:AbortSignal.timeout(60000)});
+    if(!res.ok) throw new Error('HTTP '+res.status);
     const data=await res.json();
     const hs=[];
     stocks.forEach(s=>{
@@ -891,7 +895,10 @@ async function scan(gi){
     }
     groups[gi].stocks = sortBySignal(groups[gi].stocks);
     groups[gi].lastUpdate='更新：'+ts(); sgr(); saveSigs();
-  }catch(e){alert('連線失敗，請稍後再試');}
+  }catch(e){
+    btn.textContent='✗ 查詢失敗';
+    setTimeout(()=>{btn.textContent='⚡ 掃描';},3000);
+  }
   btn.disabled=false; btn.textContent='⚡ 掃描';
   render();
 }

@@ -195,12 +195,9 @@ def batch_check():
     ids = [x.strip() for x in ids_raw.split(',') if x.strip()]
     result = {}
     for sid in ids:
-        try:
-            data = get_signals(sid)
-            if data:
-                result[sid] = data
-        except Exception:
-            pass  # 單支股票失敗，略過繼續查下一支
+        data = get_signals(sid)
+        if data:
+            result[sid] = data
     return jsonify(result)
 
 
@@ -869,8 +866,7 @@ async function scan(gi){
   const tbl=document.getElementById('main');
   const ids=stocks.map(s=>s.id).join(',');
   try{
-    const res=await fetch('/api/batch?ids='+encodeURIComponent(ids),{signal:AbortSignal.timeout(60000)});
-    if(!res.ok) throw new Error('HTTP '+res.status);
+    const res=await fetch('/api/batch?ids='+encodeURIComponent(ids));
     const data=await res.json();
     const hs=[];
     stocks.forEach(s=>{
@@ -895,10 +891,7 @@ async function scan(gi){
     }
     groups[gi].stocks = sortBySignal(groups[gi].stocks);
     groups[gi].lastUpdate='更新：'+ts(); sgr(); saveSigs();
-  }catch(e){
-    btn.textContent='✗ 查詢失敗';
-    setTimeout(()=>{btn.textContent='⚡ 掃描';},3000);
-  }
+  }catch(e){alert('連線失敗，請稍後再試');}
   btn.disabled=false; btn.textContent='⚡ 掃描';
   render();
 }
@@ -959,7 +952,7 @@ async function loadCloud(){
     render();
     btn.textContent='✓ 已載入';
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},1500);
-    setTimeout(()=>autoScan(),10000);
+    autoScan();
   }catch(e){
     btn.textContent='✗ '+(e.message||'失敗'); btn.disabled=false;
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},3000);
@@ -3466,7 +3459,7 @@ function rptTmr(){
 }
 
 render();
-window.addEventListener('load',()=>{ setTimeout(()=>loadCloud(),5000); });
+window.addEventListener('load',()=>{ setTimeout(()=>loadCloud(),1500); });
 </script>
 </body>
 </html>"""

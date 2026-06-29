@@ -952,7 +952,7 @@ async function loadCloud(){
     render();
     btn.textContent='✓ 已載入';
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},1500);
-    autoScan();
+    setTimeout(()=>autoScan(),10000);
   }catch(e){
     btn.textContent='✗ '+(e.message||'失敗'); btn.disabled=false;
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},3000);
@@ -3459,7 +3459,7 @@ function rptTmr(){
 }
 
 render();
-window.addEventListener('load',()=>{ setTimeout(()=>loadCloud(),1500); });
+window.addEventListener('load',()=>{ setTimeout(()=>loadCloud(),5000); });
 </script>
 </body>
 </html>"""

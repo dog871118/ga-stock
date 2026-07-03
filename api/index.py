@@ -549,7 +549,9 @@ function allGroups() {
     { name:'持有訊號', stocks:[], special:'hold' },
     { name:'空手訊號', stocks:[], special:'idle' },
     { name:'訊號異動', stocks:[], special:'change' },
-    { name:'均線買點', stocks:[], special:'near' },
+    { name:'5日線買點', stocks:[], special:'near5' },
+    { name:'月線買點', stocks:[], special:'near20' },
+    { name:'季線買點', stocks:[], special:'near60' },
     { name:'回踩買點', stocks:[], special:'down' },
     { name:'創新高',   stocks:[], special:'newhigh' },
     { name:'本日漲停', stocks:[], special:'limitup' },
@@ -688,7 +690,7 @@ function renderSpecial(type) {
   renderTabs();
   const titles = {
     'buy':'買進訊號','sell':'賣出訊號','hold':'持有訊號','idle':'空手訊號',
-    'change':'訊號異動','near':'均線買點','down':'回踩買點','newhigh':'創新高'
+    'change':'訊號異動','near5':'5日線買點','near20':'月線買點','near60':'季線買點','down':'回踩買點','newhigh':'創新高'
   };
   const title = titles[type] || type;
   // 收集所有5個群組中符合條件的股票
@@ -706,9 +708,12 @@ function renderSpecial(type) {
         if (s.daily.action==='持有') { matched.push(s); seen.add(s.id); }
       } else if (type==='idle') {
         if (s.daily.action==='空手') { matched.push(s); seen.add(s.id); }
-      } else if (type==='near') {
-        const hasNear = s.near_ma5||s.near_ma10||s.near_ma20||s.near_ma60d||s.near_ma60;
-        if (hasNear) { matched.push(s); seen.add(s.id); }
+      } else if (type==='near5') {
+        if (s.near_ma5) { matched.push(s); seen.add(s.id); }
+      } else if (type==='near20') {
+        if (s.near_ma20) { matched.push(s); seen.add(s.id); }
+      } else if (type==='near60') {
+        if (s.near_ma60d) { matched.push(s); seen.add(s.id); }
       } else if (type==='down') {
         const isDown = s.daily.action==='持有' && s.prev_price && s.price < s.prev_price;
         if (isDown) { matched.push(s); seen.add(s.id); }
@@ -757,11 +762,13 @@ function render(){
   if(cur === 10){ renderSpecial('hold');    return; }
   if(cur === 11){ renderSpecial('idle');    return; }
   if(cur === 12){ renderSpecial('change');  return; }
-  if(cur === 13){ renderSpecial('near');    return; }
-  if(cur === 14){ renderSpecial('down');    return; }
-  if(cur === 15){ renderSpecial('newhigh'); return; }
-  if(cur === 16){ renderLimit('up');        return; }
-  if(cur === 17){ renderLimit('down');      return; }
+  if(cur === 13){ renderSpecial('near5');   return; }
+  if(cur === 14){ renderSpecial('near20');  return; }
+  if(cur === 15){ renderSpecial('near60');  return; }
+  if(cur === 16){ renderSpecial('down');    return; }
+  if(cur === 17){ renderSpecial('newhigh'); return; }
+  if(cur === 18){ renderLimit('up');        return; }
+  if(cur === 19){ renderLimit('down');      return; }
   const g=groups[cur];
   let h=`
   <div class="grp-bar">

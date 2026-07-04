@@ -1346,8 +1346,8 @@ function rc(s,gi,si,readonly=false){
           +'<span style="width:26px;text-align:right;color:'+color+';font-weight:800;font-size:12px">'+w+'</span>'
           +'</div>';
       };
-      const swColor=sc.swing>=75?'#34c759':sc.swing>=45?'#ffd60a':'#ff453a';
-      const shColor=sc.short>=75?'#34c759':sc.short>=45?'#ffd60a':'#ff453a';
+      const swColor=sc.swing>=75?'#ff453a':sc.swing>=45?'#ffd60a':'#30d158';  // 台股：高分=紅、低分=綠=差
+      const shColor=sc.short>=75?'#ff453a':sc.short>=45?'#ffd60a':'#30d158';  // 台股：高分=紅、低分=綠=差
       const swR=sc.swingReasons.slice(0,3).join('・');
       const shR=sc.shortReasons.slice(0,3).join('・');
       const tot=Math.round(sc.swing*.6+sc.short*.4);
@@ -1369,7 +1369,7 @@ function rc(s,gi,si,readonly=false){
       const ms=calcMomentumScore(s);
       if(!ms) return '';
       const sc=ms.score;
-      const barColor=sc>=75?'#34c759':sc>=50?'#ffd60a':'#ff453a';
+      const barColor=sc>=75?'#ff453a':sc>=50?'#ffd60a':'#30d158';  // 台股：高分=紅、低分=綠=差
       const lv=sc>=75?'強勢啟動':sc>=60?'蓄勢中':sc>=40?'觀察':' 偏弱';
       let html='<div style="margin-top:5px;padding:7px 8px;background:rgba(255,159,10,.07);border-radius:7px;border:1px solid rgba(255,159,10,.2)">';
       html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">';

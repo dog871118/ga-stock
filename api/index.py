@@ -195,9 +195,12 @@ def batch_check():
     ids = [x.strip() for x in ids_raw.split(',') if x.strip()]
     result = {}
     for sid in ids:
-        data = get_signals(sid)
-        if data:
-            result[sid] = data
+        try:
+            data = get_signals(sid)
+            if data:
+                result[sid] = data
+        except Exception:
+            pass  # 單支股票失敗，略過繼續查下一支
     return jsonify(result)
 
 
@@ -619,11 +622,163 @@ function savePreScanSigs() {
 function sigOrder(action) {
   return action==='買進'?0: action==='持有'?1: action==='賣出'?2: 3;
 }
+
+// ===== 個股評分系統 =====
+// 回傳 { swing: 0-100, short: 0-100, swingReasons: [], shortReasons: [] }
+function calcScore(s) {
+  if (!s || !s.daily) return null;
+  const d  = s.daily  || {};
+  const w  = s.weekly || { action:'空手', days:0 };
+  const dA = d.action  || '空手';
+  const wA = w.action  || '空手';
+  const dD = d.days    || 0;
+  const wD = w.days    || 0;
+
+  // 取大盤溫度（有 MKT 就用，否則預設中性 50）
+  let mktSwing = 50, mktShort = 50;
+  try {
+    if (typeof MKT !== 'undefined' && MKT) {
+      const swT = MKT['波段溫度'] || {};
+      const shT = MKT['短線溫度'] || {};
+      mktSwing = Number(swT['分數'] || 50);
+      mktShort = Number(shT['分數'] || 50);
+    }
+  } catch(e) {}
+
+  let sw = 0, sh = 0;
+  const swR = [], shR = [];
+
+  // ── 波段強度分 ──────────────────────────────
+  // 1. 週線訊號 (25分)
+  if      (wA==='買進') { sw+=25; swR.push('週線買進'); }
+  else if (wA==='持有') {
+    const pts = wD<=4 ? 20 : wD<=10 ? 18 : wD<=20 ? 15 : 12;
+    sw+=pts; swR.push(`週線持有${wD}週`);
+  }
+  else if (wA==='賣出') { sw-=8;  swR.push('週線賣出'); }
+  // 空手：0分
+
+  // 2. 日線訊號 (20分)
+  if      (dA==='買進') { sw+=20; swR.push('日線買進'); }
+  else if (dA==='持有') {
+    const pts = dD<=3 ? 16 : dD<=7 ? 14 : dD<=15 ? 12 : 10;
+    sw+=pts; swR.push(`日線持有${dD}天`);
+  }
+  else if (dA==='賣出') { sw-=8;  swR.push('日線賣出'); }
+
+  // 3. 均線多頭排列 (20分)
+  if (s.ma5 && s.ma20 && s.ma60d) {
+    if (s.price > s.ma5 && s.ma5 > s.ma20 && s.ma20 > s.ma60d) {
+      sw+=20; swR.push('均線完整多排');
+    } else if (s.price > s.ma5 && s.ma5 > s.ma20) {
+      sw+=13; swR.push('MA5>MA20多排');
+    } else if (s.price > s.ma20) {
+      sw+=7;  swR.push('站上MA20');
+    } else if (s.price < s.ma60d) {
+      sw-=5;  swR.push('跌破MA60');
+    }
+  } else if (s.ma5 && s.ma20) {
+    if (s.price > s.ma5 && s.ma5 > s.ma20) { sw+=10; swR.push('MA5>MA20多排'); }
+    else if (s.price > s.ma20)              { sw+=5;  swR.push('站上MA20'); }
+  }
+
+  // 4. 週日線共振加成 (10分)
+  if ((wA==='買進'||wA==='持有') && (dA==='買進'||dA==='持有')) {
+    sw+=10; swR.push('週日線共振');
+  }
+
+  // 5. 創10日新高 (10分)
+  if (s.new_high_10) { sw+=10; swR.push('創10日新高'); }
+
+  // 6. 大盤波段溫度加權 (10分)
+  {
+    const adj = Math.round((mktSwing - 50) / 10);  // -5 ~ +5
+    sw += adj;
+    if (adj > 0)      swR.push(`大盤波段偏熱+${adj}`);
+    else if (adj < 0) swR.push(`大盤波段偏冷${adj}`);
+  }
+
+  // 7. 持有天數合理性修正
+  if (dA==='持有') {
+    if (dD > 25) { sw-=5; swR.push('持有過長留意'); }
+    if (dD === 1) { sw+=3; swR.push('剛確認持有'); }
+  }
+
+  sw = Math.max(0, Math.min(100, sw));
+
+  // ── 短線時機分 ──────────────────────────────
+  // 1. 訊號剛翻轉 (25分)
+  const ydA = (s.yesterday && s.yesterday.action) || '';
+  if (dA==='買進' && (ydA==='空手'||ydA==='賣出'||ydA==='')) {
+    sh+=25; shR.push('剛出現買進訊號');
+  } else if (dA==='持有' && dD===1) {
+    sh+=18; shR.push('持有第1天');
+  } else if (dA==='持有' && dD<=3) {
+    sh+=12; shR.push(`持有僅${dD}天`);
+  } else if (dA==='買進') {
+    sh+=15; shR.push('買進訊號中');
+  }
+
+  // 2. 均線買點回踩 (25分)
+  let nearPts = 0, nearLbl = '';
+  if (s.near_ma5)  { nearPts=Math.max(nearPts,10); nearLbl='靠近MA5'; }
+  if (s.near_ma20) { nearPts=Math.max(nearPts,18); nearLbl='靠近MA20'; }
+  if (s.near_ma60d){ nearPts=Math.max(nearPts,25); nearLbl='靠近MA60'; }
+  if (nearPts > 0 && (dA==='買進'||dA==='持有')) {
+    sh+=nearPts; shR.push(nearLbl+'回踩買點');
+  }
+
+  // 3. 今日漲跌幅表現 (15分)
+  if (s.price && s.prev_price) {
+    const pct = (s.price / s.prev_price - 1) * 100;
+    if      (pct >  3) { sh+=15; shR.push(`今日強漲+${pct.toFixed(1)}%`); }
+    else if (pct >  1) { sh+=8;  shR.push(`今日上漲+${pct.toFixed(1)}%`); }
+    else if (pct > -1) { sh+=3;  }
+    else if (pct > -3) { sh-=5;  shR.push(`今日下跌${pct.toFixed(1)}%`); }
+    else               { sh-=10; shR.push(`今日大跌${pct.toFixed(1)}%`); }
+  }
+
+  // 4. 創10日新高 (15分)
+  if (s.new_high_10) { sh+=15; shR.push('創10日新高'); }
+
+  // 5. 持有中今日下跌：短線警示
+  if (dA==='持有' && s.price && s.prev_price && s.price < s.prev_price) {
+    sh-=8; shR.push('持有中拉回留意');
+  }
+
+  // 6. 噴出辨識：連買 + 強漲 (加分但也要注意過熱)
+  if (dA==='買進' && s.price && s.prev_price) {
+    const pct = (s.price / s.prev_price - 1) * 100;
+    if (pct > 2) { sh+=10; shR.push('噴出特徵'); }
+  }
+
+  // 7. 大盤短線溫度加權 (10分)
+  {
+    const adj = Math.round((mktShort - 50) / 10);
+    sh += adj;
+    if (adj > 2)       shR.push(`大盤短線熱+${adj}`);
+    else if (adj < -2) shR.push(`大盤短線冷${adj}`);
+  }
+
+  sh = Math.max(0, Math.min(100, sh));
+
+  return { swing: sw, short: sh, swingReasons: swR, shortReasons: shR };
+}
+
+// 總分（波段 60% + 短線 40%）
+function totalScore(s) {
+  const sc = calcScore(s);
+  if (!sc) return 0;
+  return Math.round(sc.swing * 0.6 + sc.short * 0.4);
+}
+
 function sortBySignal(arr) {
   return arr.slice().sort((a,b) => {
     const da = a.daily ? sigOrder(a.daily.action) : 4;
     const db = b.daily ? sigOrder(b.daily.action) : 4;
-    return da - db;
+    if (da !== db) return da - db;
+    // 同訊號內：總分高的排前面
+    return totalScore(b) - totalScore(a);
   });
 }
 
@@ -845,6 +1000,37 @@ function rc(s,gi,si,readonly=false){
       ${ma(s.ma60d,'MA60',s.price,s.near_ma60d)}
       ${ma(s.ma60k240,'60MA240',s.price,s.near_ma60)}
     </div>
+    ${(()=>{
+      const sc=calcScore(s);
+      if(!sc) return '';
+      const bar=function(v,color){
+        const w=Math.round(v);
+        return '<div style="display:flex;align-items:center;gap:6px">'
+          +'<div style="flex:1;height:7px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden">'
+          +'<div style="width:'+w+'%;height:100%;background:'+color+';border-radius:4px"></div>'
+          +'</div>'
+          +'<span style="width:26px;text-align:right;color:'+color+';font-weight:800;font-size:12px">'+w+'</span>'
+          +'</div>';
+      };
+      const swColor=sc.swing>=75?'#34c759':sc.swing>=45?'#ffd60a':'#ff453a';
+      const shColor=sc.short>=75?'#34c759':sc.short>=45?'#ffd60a':'#ff453a';
+      const swR=sc.swingReasons.slice(0,3).join('・');
+      const shR=sc.shortReasons.slice(0,3).join('・');
+      const tot=Math.round(sc.swing*.6+sc.short*.4);
+      let html='<div style="margin-top:6px;padding:7px 8px;background:rgba(56,189,248,.07);border-radius:7px;border:1px solid rgba(56,189,248,.15)">';
+      html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">';
+      html+='<span style="font-size:11px;color:#38bdf8;font-weight:700">▪ 個股評分</span>';
+      html+='<span style="font-size:12px;color:#ff9f0a;font-weight:800">總分 '+tot+'</span>';
+      html+='</div>';
+      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-bottom:5px">';
+      html+='<div><div style="font-size:11px;color:#7aa8d0;margin-bottom:3px">波段 <span style="color:'+swColor+';font-weight:800">'+sc.swing+'</span></div>'+bar(sc.swing,swColor)+'</div>';
+      html+='<div><div style="font-size:11px;color:#7aa8d0;margin-bottom:3px">短線 <span style="color:'+shColor+';font-weight:800">'+sc.short+'</span></div>'+bar(sc.short,shColor)+'</div>';
+      html+='</div>';
+      if(swR) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.6">波段：'+swR+'</div>';
+      if(shR) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.6">短線：'+shR+'</div>';
+      html+='</div>';
+      return html;
+    })()}
   </div>`;
 }
 
@@ -873,7 +1059,8 @@ async function scan(gi){
   const tbl=document.getElementById('main');
   const ids=stocks.map(s=>s.id).join(',');
   try{
-    const res=await fetch('/api/batch?ids='+encodeURIComponent(ids));
+    const res=await fetch('/api/batch?ids='+encodeURIComponent(ids),{signal:AbortSignal.timeout(60000)});
+    if(!res.ok) throw new Error('HTTP '+res.status);
     const data=await res.json();
     const hs=[];
     stocks.forEach(s=>{
@@ -898,7 +1085,10 @@ async function scan(gi){
     }
     groups[gi].stocks = sortBySignal(groups[gi].stocks);
     groups[gi].lastUpdate='更新：'+ts(); sgr(); saveSigs();
-  }catch(e){alert('連線失敗，請稍後再試');}
+  }catch(e){
+    btn.textContent='✗ 查詢失敗';
+    setTimeout(()=>{btn.textContent='⚡ 掃描';},3000);
+  }
   btn.disabled=false; btn.textContent='⚡ 掃描';
   render();
 }
@@ -959,7 +1149,7 @@ async function loadCloud(){
     render();
     btn.textContent='✓ 已載入';
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},1500);
-    autoScan();
+    setTimeout(()=>autoScan(),10000);
   }catch(e){
     btn.textContent='✗ '+(e.message||'失敗'); btn.disabled=false;
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},3000);
@@ -3466,7 +3656,7 @@ function rptTmr(){
 }
 
 render();
-window.addEventListener('load',()=>{ setTimeout(()=>loadCloud(),1500); });
+window.addEventListener('load',()=>{ setTimeout(()=>loadCloud(),5000); });
 </script>
 </body>
 </html>"""

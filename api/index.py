@@ -158,6 +158,9 @@ def get_signals(stock_id):
         vol_3d_inc = False; vol_5d_slope_up = False
         vol_hollow = False; vol_no_spike = False
         high_52w = None; new_high_52w = False
+        low_52w = None; gain_52w = None   # 距52週低點漲幅
+        low_60d = None; gain_60d = None   # 距60日低點漲幅
+        ma60_bias = None                   # 距MA60乖離率
         close_pos = None  # 今日收盤在日高低間的位置 0~1
         red_k_10 = 0; black_k_10 = 0; long_upper_shadow_10 = 0
         ma5_slope = None; ma10_slope = None; ma20_slope = None
@@ -231,8 +234,19 @@ def get_signals(stock_id):
                     if len(c1y) >= 2:
                         high_52w = round(float(c1y.max()), 2)
                         new_high_52w = float(price) >= float(c1y.iloc[:-1].max())
+                        low_52w = round(float(c1y.min()), 2)
+                        if low_52w > 0:
+                            gain_52w = round((float(price) - low_52w) / low_52w * 100, 1)
             except:
                 pass
+
+            # 60日低點漲幅 & MA60乖離率
+            if len(close_d) >= 20:
+                low_60d = round(float(close_d.iloc[-min(60,len(close_d)):].min()), 2)
+                if low_60d > 0:
+                    gain_60d = round((float(price) - low_60d) / low_60d * 100, 1)
+            if ma60d and ma60d > 0:
+                ma60_bias = round((float(price) - ma60d) / ma60d * 100, 1)
 
             # 收盤位置（今日高低間 0~1，越高越強）
             if len(high_s) >= 1 and len(low_s) >= 1:
@@ -311,6 +325,11 @@ def get_signals(stock_id):
             'vol_no_spike':     vol_no_spike,
             'high_52w':         high_52w,
             'new_high_52w':     new_high_52w,
+            'low_52w':          low_52w,
+            'gain_52w':         gain_52w,
+            'low_60d':          low_60d,
+            'gain_60d':         gain_60d,
+            'ma60_bias':        ma60_bias,
             'close_pos':        close_pos,
             'red_k_10':         red_k_10,
             'black_k_10':       black_k_10,
@@ -701,8 +720,8 @@ function allGroups() {
     { name:'持有訊號', stocks:[], special:'hold' },
     { name:'空手訊號', stocks:[], special:'idle' },
     { name:'訊號異動', stocks:[], special:'change' },
-    { name:'波段前20',  stocks:[], special:'rank_swing' },
-    { name:'短線前20',  stocks:[], special:'rank_short' },
+    { name:'趨勢前20',  stocks:[], special:'rank_swing' },
+    { name:'時機前20',  stocks:[], special:'rank_short' },
     { name:'啟動前20',  stocks:[], special:'rank_momentum' },
     { name:'5日線買點', stocks:[], special:'near5' },
     { name:'月線買點', stocks:[], special:'near20' },
@@ -795,6 +814,43 @@ function savePreScanSigs() {
 
 function sigOrder(action) {
   return action==='買進'?0: action==='持有'?1: action==='賣出'?2: 3;
+}
+
+// ===== 位置風險輔助函式 =====
+function posRiskHtml(s) {
+  if (!s || !s.price) return '';
+  const parts = [];
+
+  // 距52週低點漲幅
+  if (s.gain_52w != null) {
+    let color = '#a0b4c8';
+    if (s.gain_52w > 150) color = '#ff453a';
+    else if (s.gain_52w > 60) color = '#ff9f0a';
+    else if (s.gain_52w > 25) color = '#ffd60a';
+    parts.push(`<span style="color:${color}">52週低+${s.gain_52w}%</span>`);
+  }
+
+  // 距60日低點漲幅
+  if (s.gain_60d != null) {
+    let color = '#a0b4c8';
+    if (s.gain_60d > 80) color = '#ff453a';
+    else if (s.gain_60d > 35) color = '#ff9f0a';
+    else if (s.gain_60d > 15) color = '#ffd60a';
+    parts.push(`<span style="color:${color}">60日低+${s.gain_60d}%</span>`);
+  }
+
+  // MA60乖離率＋等級
+  if (s.ma60_bias != null) {
+    let color = '#a0b4c8', label = '';
+    if (s.ma60_bias > 60)      { color = '#ff453a'; label = '🔴嚴重過熱'; }
+    else if (s.ma60_bias > 35) { color = '#ff9f0a'; label = '🟠偏高注意'; }
+    else if (s.ma60_bias > 15) { color = '#ffd60a'; label = '🟡正常拉升'; }
+    else                       { color = '#34c759'; label = '🟢貼近均線'; }
+    parts.push(`<span style="color:${color}">MA60乖離${s.ma60_bias>0?'+':''}${s.ma60_bias}% ${label}</span>`);
+  }
+
+  if (parts.length === 0) return '';
+  return `<div style="margin-top:4px;padding:5px 8px;background:rgba(255,255,255,.04);border-radius:6px;font-size:10.5px;display:flex;flex-wrap:wrap;gap:6px 10px">${parts.join('')}</div>`;
 }
 
 // ===== 主升段啟動分（Stage 2 Launch Score）=====
@@ -1218,7 +1274,8 @@ function momentumLabel(sc) {
 function renderRanking(type) {
   renderTabs();
   const mainEl = document.getElementById('main');
-  // 從群組1~8彙整所有有資料的股票
+  // 從群組1~8彙整所有有資料的股票（同代號去重，保留分數最高的）
+  const seenIds = {};
   let all = [];
   groups.slice(0,8).forEach((g, gi) => {
     (g.stocks||[]).forEach(s => {
@@ -1226,19 +1283,28 @@ function renderRanking(type) {
       const sc = calcScore(s);
       const ms = calcMomentumScore(s);
       const prev = loadPrevScores()[s.id] || {};
-      all.push({ s, gi, sc, ms, prev });
+      // 計算此筆的主要分數（三種 Tab 都取最大值做去重依據）
+      const maxSc = Math.max(
+        sc ? sc.swing : 0,
+        sc ? sc.short : 0,
+        ms ? ms.score : 0
+      );
+      if (!seenIds[s.id] || maxSc > seenIds[s.id].maxSc) {
+        seenIds[s.id] = { s, gi, sc, ms, prev, maxSc };
+      }
     });
   });
+  all = Object.values(seenIds);
 
   // 依類型排序
   let sorted, titleText, emptyText;
   if (type === 'rank_swing') {
     sorted = all.filter(x => x.sc).sort((a,b) => b.sc.swing - a.sc.swing).slice(0,20);
-    titleText = '▪ 波段評分 前20名';
+    titleText = '▪ 趨勢健康 前20名';
     emptyText = '請先掃描自選股 1–8 組';
   } else if (type === 'rank_short') {
     sorted = all.filter(x => x.sc).sort((a,b) => b.sc.short - a.sc.short).slice(0,20);
-    titleText = '▪ 短線評分 前20名';
+    titleText = '▪ 進場時機 前20名';
     emptyText = '請先掃描自選股 1–8 組';
   } else {
     sorted = all.filter(x => x.ms).sort((a,b) => b.ms.score - a.ms.score).slice(0,20);
@@ -1344,6 +1410,7 @@ function renderRanking(type) {
         ${s.price ? `<span style="font-size:13px;font-weight:700;color:#ffd60a">${s.price}</span>` : ''}
       </div>
       ${reasonHtml}
+      ${posRiskHtml(s)}
     </div>`;
   });
 
@@ -1551,11 +1618,11 @@ function rc(s,gi,si,readonly=false){
       html+='<span style="font-size:12px;color:#ff9f0a;font-weight:800">總分 '+tot+totDelta+'</span>';
       html+='</div>';
       html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-bottom:5px">';
-      html+='<div><div style="font-size:11px;color:#7aa8d0;margin-bottom:3px">波段 <span style="color:'+swColor+';font-weight:800">'+sc.swing+'</span>'+swDelta+'</div>'+bar(sc.swing,swColor)+'</div>';
-      html+='<div><div style="font-size:11px;color:#7aa8d0;margin-bottom:3px">短線 <span style="color:'+shColor+';font-weight:800">'+sc.short+'</span>'+shDelta+'</div>'+bar(sc.short,shColor)+'</div>';
+      html+='<div><div style="font-size:11px;color:#7aa8d0;margin-bottom:3px">趨勢健康 <span style="color:'+swColor+';font-weight:800">'+sc.swing+'</span>'+swDelta+'</div>'+bar(sc.swing,swColor)+'</div>';
+      html+='<div><div style="font-size:11px;color:#7aa8d0;margin-bottom:3px">進場時機 <span style="color:'+shColor+';font-weight:800">'+sc.short+'</span>'+shDelta+'</div>'+bar(sc.short,shColor)+'</div>';
       html+='</div>';
-      if(swR) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.6">波段：'+swR+'</div>';
-      if(shR) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.6">短線：'+shR+'</div>';
+      if(swR) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.6">趨勢：'+swR+'</div>';
+      if(shR) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.6">時機：'+shR+'</div>';
       html+='</div>';
       return html;
     })()}
@@ -1600,6 +1667,7 @@ function rc(s,gi,si,readonly=false){
       html+='</div>';
       return html;
     })()}
+    ${posRiskHtml(s)}
   </div>`;
 }
 
@@ -1647,6 +1715,9 @@ async function scan(gi){
         s.vol_3d_inc=r.vol_3d_inc; s.vol_5d_slope_up=r.vol_5d_slope_up;
         s.vol_hollow=r.vol_hollow; s.vol_no_spike=r.vol_no_spike;
         s.high_52w=r.high_52w; s.new_high_52w=r.new_high_52w;
+        s.low_52w=r.low_52w; s.gain_52w=r.gain_52w;
+        s.low_60d=r.low_60d; s.gain_60d=r.gain_60d;
+        s.ma60_bias=r.ma60_bias;
         s.close_pos=r.close_pos;
         s.red_k_10=r.red_k_10; s.black_k_10=r.black_k_10;
         s.long_upper_shadow_10=r.long_upper_shadow_10;

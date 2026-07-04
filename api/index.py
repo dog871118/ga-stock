@@ -152,6 +152,134 @@ def get_signals(stock_id):
                 return abs(p - ma) / ma <= 0.03
             return False
 
+        # ── 量能欄位（主升段啟動分用）──
+        vol_today = None; vol_ma5v = None; vol_ma20v = None
+        vol_ratio = None; vol_cv10 = None
+        vol_3d_inc = False; vol_5d_slope_up = False
+        vol_hollow = False; vol_no_spike = False
+        high_52w = None; new_high_52w = False
+        close_pos = None  # 今日收盤在日高低間的位置 0~1
+        red_k_10 = 0; black_k_10 = 0; long_upper_shadow_10 = 0
+        ma5_slope = None; ma10_slope = None; ma20_slope = None
+        rs_20 = None  # 近20日相對強度 vs 大盤
+
+        try:
+            # 抓 Volume（用 df_d 已有）
+            if isinstance(df_d.columns, pd.MultiIndex):
+                vol_s = df_d['Volume'].iloc[:, 0].dropna()
+                high_s = df_d['High'].iloc[:, 0].dropna()
+                low_s  = df_d['Low'].iloc[:, 0].dropna()
+                open_s = df_d['Open'].iloc[:, 0].dropna()
+            else:
+                vol_s  = df_d['Volume'].dropna()
+                high_s = df_d['High'].dropna()
+                low_s  = df_d['Low'].dropna()
+                open_s = df_d['Open'].dropna()
+
+            # 盤中同步截斷
+            min_len = min(len(close_d), len(vol_s), len(high_s), len(low_s))
+            vol_s  = vol_s.iloc[-min_len:]
+            high_s = high_s.iloc[-min_len:]
+            low_s  = low_s.iloc[-min_len:]
+            open_s = open_s.iloc[-min_len:]
+
+            if len(vol_s) >= 5:
+                vol_today  = int(vol_s.iloc[-1])
+                vol_ma5v   = float(vol_s.iloc[-5:].mean())
+                vol_ma20v  = float(vol_s.iloc[-20:].mean()) if len(vol_s) >= 20 else float(vol_s.mean())
+                vol_ratio  = round(vol_today / vol_ma20v, 2) if vol_ma20v > 0 else None
+
+                # 近10日量 CV（變異係數：越低量縮越穩定）
+                if len(vol_s) >= 10:
+                    v10 = vol_s.iloc[-10:].astype(float)
+                    mean10 = float(v10.mean())
+                    vol_cv10 = round(float(v10.std()) / mean10, 3) if mean10 > 0 else None
+
+                # 近3日量遞增
+                if len(vol_s) >= 3:
+                    vol_3d_inc = (float(vol_s.iloc[-1]) > float(vol_s.iloc[-2]) > float(vol_s.iloc[-3]))
+
+                # 五日均量向上（最近5日均 > 前5日均）
+                if len(vol_s) >= 10:
+                    vol_5d_slope_up = float(vol_s.iloc[-5:].mean()) > float(vol_s.iloc[-10:-5].mean())
+
+                # 凹洞量判斷
+                # 定義：過去20日有高峰量，中間量縮到低點，最近3日出量回升但未超過高峰50%
+                if len(vol_s) >= 20:
+                    v20 = vol_s.iloc[-20:].astype(float).values
+                    peak_vol = float(v20[:-5].max()) if len(v20) > 5 else float(v20.max())
+                    trough_vol = float(v20[-10:-3].min()) if len(v20) >= 13 else float(v20.min())
+                    recent_avg = float(vol_s.iloc[-3:].mean())
+                    vol_hollow = (
+                        peak_vol > 0 and
+                        trough_vol < peak_vol * 0.6 and   # 有明顯量縮
+                        recent_avg > trough_vol * 1.3 and  # 出量回升30%以上
+                        recent_avg < peak_vol * 0.55       # 但未達高峰量55%（慢慢出量）
+                    )
+
+                # 今日沒有爆量（量比 < 2.0）
+                vol_no_spike = (vol_ratio is not None and vol_ratio < 2.0)
+
+            # 52週新高（抓1年資料）
+            try:
+                df_1y = yf.download(ticker, period='1y', auto_adjust=True, progress=False)
+                if not df_1y.empty:
+                    if isinstance(df_1y.columns, pd.MultiIndex):
+                        c1y = df_1y['Close'].iloc[:, 0].dropna()
+                    else:
+                        c1y = df_1y['Close'].dropna()
+                    if len(c1y) >= 2:
+                        high_52w = round(float(c1y.max()), 2)
+                        new_high_52w = float(price) >= float(c1y.iloc[:-1].max())
+            except:
+                pass
+
+            # 收盤位置（今日高低間 0~1，越高越強）
+            if len(high_s) >= 1 and len(low_s) >= 1:
+                h = float(high_s.iloc[-1]); l = float(low_s.iloc[-1])
+                if h > l:
+                    close_pos = round((float(price) - l) / (h - l), 3)
+
+            # 健康度：近10日紅黑K、上影線
+            if len(close_d) >= 10 and len(open_s) >= 10 and len(high_s) >= 10:
+                for i in range(-10, 0):
+                    c = float(close_d.iloc[i]); o = float(open_s.iloc[i])
+                    h = float(high_s.iloc[i]);  l = float(low_s.iloc[i])
+                    if c >= o:
+                        red_k_10 += 1
+                    else:
+                        black_k_10 += 1
+                    body = abs(c - o)
+                    upper = h - max(c, o)
+                    if body > 0 and upper / body > 0.5:
+                        long_upper_shadow_10 += 1
+
+            # 均線斜率（用近5日vs前5日均線比較）
+            if len(close_d) >= 10:
+                ma5_slope  = round((float(close_d.iloc[-5:].mean()) - float(close_d.iloc[-10:-5].mean())) / float(close_d.iloc[-10:-5].mean()) * 100, 3) if len(close_d) >= 10 else None
+            if len(close_d) >= 20:
+                ma10_slope = round((float(close_d.iloc[-10:].mean()) - float(close_d.iloc[-20:-10].mean())) / float(close_d.iloc[-20:-10].mean()) * 100, 3)
+            if len(close_d) >= 40:
+                ma20_slope = round((float(close_d.iloc[-20:].mean()) - float(close_d.iloc[-40:-20].mean())) / float(close_d.iloc[-40:-20].mean()) * 100, 3)
+
+            # RS 近20日相對強度（抓大盤 ^TWII）
+            try:
+                df_tw = yf.download('^TWII', period='60d', auto_adjust=True, progress=False)
+                if not df_tw.empty:
+                    if isinstance(df_tw.columns, pd.MultiIndex):
+                        tw_c = df_tw['Close'].iloc[:, 0].dropna()
+                    else:
+                        tw_c = df_tw['Close'].dropna()
+                    if len(tw_c) >= 20 and len(close_d) >= 20:
+                        stock_ret = (float(close_d.iloc[-1]) / float(close_d.iloc[-20]) - 1) * 100
+                        mkt_ret   = (float(tw_c.iloc[-1])   / float(tw_c.iloc[-20])   - 1) * 100
+                        rs_20 = round(stock_ret - mkt_ret, 2)
+            except:
+                pass
+
+        except Exception as e:
+            pass  # 量能計算失敗不影響主要訊號
+
         return {
             'price':      price,
             'prev_price': prev_price,
@@ -171,6 +299,26 @@ def get_signals(stock_id):
             'yesterday':  {'signal': y_signal, 'action': y_action},
             'new_high_10': new_high_10,
             'weekly':     {'signal': w_signal, 'action': w_action, 'days': w_days},
+            # 主升段啟動分所需欄位
+            'vol_today':        vol_today,
+            'vol_ma5v':         round(vol_ma5v) if vol_ma5v else None,
+            'vol_ma20v':        round(vol_ma20v) if vol_ma20v else None,
+            'vol_ratio':        vol_ratio,
+            'vol_cv10':         vol_cv10,
+            'vol_3d_inc':       vol_3d_inc,
+            'vol_5d_slope_up':  vol_5d_slope_up,
+            'vol_hollow':       vol_hollow,
+            'vol_no_spike':     vol_no_spike,
+            'high_52w':         high_52w,
+            'new_high_52w':     new_high_52w,
+            'close_pos':        close_pos,
+            'red_k_10':         red_k_10,
+            'black_k_10':       black_k_10,
+            'long_upper_shadow_10': long_upper_shadow_10,
+            'ma5_slope':        ma5_slope,
+            'ma10_slope':       ma10_slope,
+            'ma20_slope':       ma20_slope,
+            'rs_20':            rs_20,
         }
     except:
         return None
@@ -623,6 +771,192 @@ function sigOrder(action) {
   return action==='買進'?0: action==='持有'?1: action==='賣出'?2: 3;
 }
 
+// ===== 主升段啟動分（Stage 2 Launch Score）=====
+// 架構：量能品質30 + 趨勢強度25 + 價格動能20 + 週期共振15 + 相對強度RS10
+// 最後套用健康度修正(±10) 及 市場環境係數
+function calcMomentumScore(s) {
+  if (!s || !s.daily) return null;
+  const d  = s.daily  || {};
+  const w  = s.weekly || { action:'空手', days:0 };
+  const dA = d.action || '空手';
+  const wA = w.action || '空手';
+  const wD = w.days   || 0;
+
+  let score = 0;
+  const reasons = [];   // 加分理由
+  const warns   = [];   // 扣分警示
+
+  // ── 一、量能品質（30分）──────────────────────
+  let volPts = 0;
+
+  // 凹洞量形成（主升前整理完成訊號）+10
+  if (s.vol_hollow) { volPts += 10; reasons.push('凹洞量啟動'); }
+
+  // 近3日量遞增 +10
+  if (s.vol_3d_inc) { volPts += 10; reasons.push('三日量遞增'); }
+
+  // 今日量比>1.3（出量） +8
+  if (s.vol_ratio != null && s.vol_ratio >= 1.3) { volPts += 8; reasons.push('量比'+s.vol_ratio+'倍'); }
+  else if (s.vol_ratio != null && s.vol_ratio >= 1.0) { volPts += 3; }
+
+  // 五日均量向上（量能趨勢） +6
+  if (s.vol_5d_slope_up) { volPts += 6; reasons.push('均量上升'); }
+
+  // 沒有爆量（慢慢出量，不是短線噴出） +6
+  if (s.vol_no_spike) { volPts += 6; }
+
+  // 量穩定性：CV低代表量縮漂亮（整理健康）
+  if (s.vol_cv10 != null) {
+    if (s.vol_cv10 < 0.3)      { volPts += 5; reasons.push('量縮穩定'); }
+    else if (s.vol_cv10 > 0.8) { volPts -= 3; warns.push('量能紊亂'); }
+  }
+
+  score += Math.min(30, Math.max(0, volPts));
+
+  // ── 二、趨勢強度（25分）──────────────────────
+  let trendPts = 0;
+
+  // 均線斜率：三條同向上最強
+  let slopeUp = 0;
+  if (s.ma5_slope  != null && s.ma5_slope  > 0) slopeUp++;
+  if (s.ma10_slope != null && s.ma10_slope > 0) slopeUp++;
+  if (s.ma20_slope != null && s.ma20_slope > 0) slopeUp++;
+  if (slopeUp === 3) { trendPts += 12; reasons.push('三線同向上'); }
+  else if (slopeUp === 2) { trendPts += 7; reasons.push('雙線向上'); }
+  else if (slopeUp === 1) { trendPts += 3; }
+  else if (slopeUp === 0) { trendPts -= 5; warns.push('均線走平'); }
+
+  // 均線多頭排列
+  if (s.ma5 && s.ma20 && s.ma60d) {
+    if (s.price > s.ma5 && s.ma5 > s.ma20 && s.ma20 > s.ma60d) {
+      trendPts += 8; reasons.push('均線完整多排');
+    } else if (s.price > s.ma5 && s.ma5 > s.ma20) {
+      trendPts += 5;
+    }
+  }
+
+  // 週線趨勢持續性
+  if (wA === '買進') { trendPts += 5; }
+  else if (wA === '持有' && wD >= 2) { trendPts += 3; }
+
+  score += Math.min(25, Math.max(0, trendPts));
+
+  // ── 三、價格動能（20分）──────────────────────
+  let pricePts = 0;
+
+  // 今日漲幅
+  if (s.price && s.prev_price) {
+    const pct = (s.price / s.prev_price - 1) * 100;
+    if (pct > 4)       { pricePts += 8; reasons.push('今日強漲+'+pct.toFixed(1)+'%'); }
+    else if (pct > 2)  { pricePts += 5; reasons.push('今日上漲+'+pct.toFixed(1)+'%'); }
+    else if (pct > 0)  { pricePts += 2; }
+    else if (pct < -3) { pricePts -= 5; warns.push('今日下跌'+pct.toFixed(1)+'%'); }
+  }
+
+  // 收盤位置（越接近日高越強）
+  if (s.close_pos != null) {
+    if (s.close_pos >= 0.8)       { pricePts += 5; reasons.push('收盤近日高'); }
+    else if (s.close_pos >= 0.5)  { pricePts += 2; }
+    else if (s.close_pos < 0.2)   { pricePts -= 3; warns.push('收盤近日低'); }
+  }
+
+  // 距52週新高（越近越強，代表剛突破或準備突破）
+  if (s.new_high_52w) {
+    pricePts += 7; reasons.push('52週新高');
+  } else if (s.high_52w && s.price) {
+    const distPct = (s.high_52w - s.price) / s.high_52w * 100;
+    if (distPct <= 5)       { pricePts += 5; reasons.push('距52週高<5%'); }
+    else if (distPct <= 10) { pricePts += 3; }
+    else if (distPct <= 15) { pricePts += 1; }
+  }
+
+  // 突破近20日最高點
+  if (s.new_high_10) { pricePts += 3; }
+
+  score += Math.min(20, Math.max(0, pricePts));
+
+  // ── 四、週期共振（15分）──────────────────────
+  let resonPts = 0;
+
+  // 日線買進 +5
+  if (dA === '買進') { resonPts += 5; }
+  else if (dA === '持有') { resonPts += 2; }
+
+  // 週線持有 +5
+  if (wA === '持有') { resonPts += 5; }
+  else if (wA === '買進') { resonPts += 4; }
+
+  // 週線剛翻多（週數<=2）+5
+  if ((wA === '買進' || wA === '持有') && wD <= 2) {
+    resonPts += 5; reasons.push('週線剛翻多');
+  }
+
+  // 日週同時買進：最強共振
+  if (dA === '買進' && wA === '買進') { resonPts += 3; reasons.push('日週雙買'); }
+
+  score += Math.min(15, Math.max(0, resonPts));
+
+  // ── 五、相對強度 RS（10分）──────────────────
+  if (s.rs_20 != null) {
+    if      (s.rs_20 >= 10) { score += 10; reasons.push('RS超強+'+s.rs_20+'%'); }
+    else if (s.rs_20 >= 5)  { score += 7;  reasons.push('RS強+'+s.rs_20+'%'); }
+    else if (s.rs_20 >= 0)  { score += 4;  }
+    else if (s.rs_20 >= -5) { score += 0;  warns.push('RS略弱'); }
+    else                    { score -= 5;  warns.push('RS弱'+s.rs_20+'%'); }
+  }
+
+  // ── 六、健康度修正（±10）────────────────────
+  // 近10日紅K比例
+  const totalK = (s.red_k_10||0) + (s.black_k_10||0);
+  if (totalK > 0) {
+    const redRatio = (s.red_k_10||0) / totalK;
+    if (redRatio >= 0.7)      { score += 5; reasons.push('近10日多紅K'); }
+    else if (redRatio <= 0.3) { score -= 5; warns.push('近10日多黑K'); }
+  }
+
+  // 上影線過多（假突破特徵）
+  if ((s.long_upper_shadow_10||0) >= 4) {
+    score -= 5; warns.push('上影線偏多');
+  }
+
+  // ── 七、扣分機制（重要警示）────────────────
+  // 高檔爆量（量比>3）且今日非大漲：出貨警訊
+  if (s.vol_ratio != null && s.vol_ratio >= 3.0 && s.prev_price && s.price) {
+    const pct = (s.price / s.prev_price - 1) * 100;
+    if (pct < 2) { score -= 15; warns.push('高檔爆量警示'); }
+  }
+
+  // 跌破MA20
+  if (s.ma20 && s.price < s.ma20) { score -= 10; warns.push('跌破MA20'); }
+
+  // 跌破MA60
+  if (s.ma60d && s.price < s.ma60d) { score -= 5; warns.push('跌破MA60'); }
+
+  // RS持續弱（低於-10%）
+  if (s.rs_20 != null && s.rs_20 < -10) { score -= 10; warns.push('RS極弱'); }
+
+  // ── 八、市場環境係數 ────────────────────────
+  let envCoef = 1.0;
+  try {
+    if (typeof MKT !== 'undefined' && MKT) {
+      const swT = MKT['波段溫度'] || {};
+      const mktSwing = Number(swT['分數'] || 50);
+      // 大盤波段偏空時降權
+      if (mktSwing < 30)      envCoef = 0.75;
+      else if (mktSwing < 45) envCoef = 0.88;
+      else if (mktSwing > 80) envCoef = 1.05;
+    }
+  } catch(e) {}
+
+  score = Math.round(Math.max(0, Math.min(100, score)) * envCoef);
+
+  return {
+    score:   score,
+    reasons: reasons.slice(0, 4),
+    warns:   warns.slice(0, 3)
+  };
+}
+
 // ===== 個股評分系統 =====
 // 回傳 { swing: 0-100, short: 0-100, swingReasons: [], shortReasons: [] }
 function calcScore(s) {
@@ -1031,6 +1365,25 @@ function rc(s,gi,si,readonly=false){
       html+='</div>';
       return html;
     })()}
+    ${(()=>{
+      const ms=calcMomentumScore(s);
+      if(!ms) return '';
+      const sc=ms.score;
+      const barColor=sc>=75?'#34c759':sc>=50?'#ffd60a':'#ff453a';
+      const lv=sc>=75?'強勢啟動':sc>=60?'蓄勢中':sc>=40?'觀察':' 偏弱';
+      let html='<div style="margin-top:5px;padding:7px 8px;background:rgba(255,159,10,.07);border-radius:7px;border:1px solid rgba(255,159,10,.2)">';
+      html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">';
+      html+='<span style="font-size:11px;color:#ff9f0a;font-weight:700">🚀 主升段啟動分</span>';
+      html+='<span style="font-size:12px;font-weight:800;color:'+barColor+'">'+sc+' <span style="font-size:10px;color:#a0b4c8">'+lv+'</span></span>';
+      html+='</div>';
+      html+='<div style="height:7px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden;margin-bottom:5px">';
+      html+='<div style="width:'+sc+'%;height:100%;background:'+barColor+';border-radius:4px;transition:width .4s"></div>';
+      html+='</div>';
+      if(ms.reasons.length>0) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.7">✓ '+ms.reasons.join('・')+'</div>';
+      if(ms.warns.length>0)   html+='<div style="font-size:10.5px;color:#ff453a;line-height:1.7;margin-top:1px">⚠ '+ms.warns.join('・')+'</div>';
+      html+='</div>';
+      return html;
+    })()}
   </div>`;
 }
 
@@ -1072,6 +1425,17 @@ async function scan(gi){
         s.near_ma20=r.near_ma20; s.near_ma60d=r.near_ma60d; s.near_ma60=r.near_ma60;
         s.daily=r.daily; s.weekly=r.weekly; s.yesterday=r.yesterday; s.new_high_10=r.new_high_10;
         s.name=r.name||'';
+        // 主升段啟動分欄位
+        s.vol_today=r.vol_today; s.vol_ma5v=r.vol_ma5v; s.vol_ma20v=r.vol_ma20v;
+        s.vol_ratio=r.vol_ratio; s.vol_cv10=r.vol_cv10;
+        s.vol_3d_inc=r.vol_3d_inc; s.vol_5d_slope_up=r.vol_5d_slope_up;
+        s.vol_hollow=r.vol_hollow; s.vol_no_spike=r.vol_no_spike;
+        s.high_52w=r.high_52w; s.new_high_52w=r.new_high_52w;
+        s.close_pos=r.close_pos;
+        s.red_k_10=r.red_k_10; s.black_k_10=r.black_k_10;
+        s.long_upper_shadow_10=r.long_upper_shadow_10;
+        s.ma5_slope=r.ma5_slope; s.ma10_slope=r.ma10_slope; s.ma20_slope=r.ma20_slope;
+        s.rs_20=r.rs_20;
         hs.push({id:s.id,price:r.price,daily:r.daily,weekly:r.weekly});
       }
     });

@@ -1341,6 +1341,34 @@ function rc(s,gi,si,readonly=false){
       ${ma(s.ma60d,'MA60',s.price,s.near_ma60d)}
       ${ma(s.ma60k240,'60MA240',s.price,s.near_ma60)}
     </div>
+    ${(()=>{
+      const sc=calcScore(s);
+      if(!sc) return '';
+      const prevSc=loadPrevScores()[s.id]||{};
+      let swDelta='',shDelta='',totDelta='';
+      if(prevSc.swing!=null){const d=sc.swing-prevSc.swing;if(Math.abs(d)>=1){const c=d>0?'#ff453a':'#30d158';swDelta=`<span style="font-size:10px;color:${c};margin-left:3px">${d>0?'▲':'▼'}${Math.abs(d)}</span>`;}}
+      if(prevSc.short!=null){const d=sc.short-prevSc.short;if(Math.abs(d)>=1){const c=d>0?'#ff453a':'#30d158';shDelta=`<span style="font-size:10px;color:${c};margin-left:3px">${d>0?'▲':'▼'}${Math.abs(d)}</span>`;}}
+      if(prevSc.swing!=null&&prevSc.short!=null){const prevTot=Math.round(prevSc.swing*.6+prevSc.short*.4);const d=Math.round(sc.swing*.6+sc.short*.4)-prevTot;if(Math.abs(d)>=1){const c=d>0?'#ff453a':'#30d158';totDelta=`<span style="font-size:10px;color:${c};margin-left:4px">${d>0?'▲':'▼'}${Math.abs(d)}</span>`;}}
+      const tot=Math.round(sc.swing*.6+sc.short*.4);
+      const swColor=sc.swing>=75?'#ff453a':sc.swing>=45?'#ffd60a':'#30d158';
+      const shColor=sc.short>=75?'#ff453a':sc.short>=45?'#ffd60a':'#30d158';
+      const bar=function(v,color){const w=Math.round(v);return '<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:7px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden"><div style="width:'+w+'%;height:100%;background:'+color+';border-radius:4px"></div></div><span style="width:26px;text-align:right;color:'+color+';font-weight:800;font-size:12px">'+w+'</span></div>';};
+      const swR=sc.swingReasons.slice(0,3).join('・');
+      const shR=sc.shortReasons.slice(0,3).join('・');
+      let html='<div style="margin-top:6px;padding:7px 8px;background:rgba(56,189,248,.07);border-radius:7px;border:1px solid rgba(56,189,248,.15)">';
+      html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">';
+      html+='<span style="font-size:11px;color:#38bdf8;font-weight:700">▪ 個股評分</span>';
+      html+='<span style="font-size:12px;color:#ff9f0a;font-weight:800">總分 '+tot+totDelta+'</span>';
+      html+='</div>';
+      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-bottom:5px">';
+      html+='<div><div style="font-size:11px;color:#7aa8d0;margin-bottom:3px">趨勢健康 <span style="color:'+swColor+';font-weight:800">'+sc.swing+'</span>'+swDelta+'</div>'+bar(sc.swing,swColor)+'</div>';
+      html+='<div><div style="font-size:11px;color:#7aa8d0;margin-bottom:3px">進場時機 <span style="color:'+shColor+';font-weight:800">'+sc.short+'</span>'+shDelta+'</div>'+bar(sc.short,shColor)+'</div>';
+      html+='</div>';
+      if(swR) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.6">趨勢：'+swR+'</div>';
+      if(shR) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.6">時機：'+shR+'</div>';
+      html+='</div>';
+      return html;
+    })()}
   </div>`;
 }
 
@@ -1359,7 +1387,7 @@ function del(gi,si){ groups[gi].stocks.splice(si,1); sgr(); render(); }
 
 async function scan(gi){
   const stocks=groups[gi].stocks;
-  if(!stocks||stocks.length===0){alert('請先新增股票');return;}
+  if(!stocks||stocks.length===0){ return; }
   savePreScanSigs();
 
   // 每次重取按鈕，避免 autoScan 切換群組後按鈕失效
@@ -1458,7 +1486,7 @@ async function loadCloud(){
   const btn=document.getElementById('btnLoad');
   btn.textContent='載入中…'; btn.disabled=true;
   try{
-    const res=await fetch('/api/sync-load',{signal:AbortSignal.timeout(20000)});
+    const res=await fetch('/api/sync-load',{signal:AbortSignal.timeout(45000)});
     const j=await res.json();
     const rows=j.data||[];
     if(rows.length===0){alert('雲端無資料');btn.textContent='⬇ 載雲端';btn.disabled=false;return;}
@@ -1477,10 +1505,12 @@ async function loadCloud(){
     render();
     btn.textContent='✓ 已載入';
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},1500);
-    setTimeout(()=>autoScan(),10000);
+    setTimeout(()=>autoScan(),5000);
   }catch(e){
     btn.textContent='✗ '+(e.message||'失敗'); btn.disabled=false;
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},3000);
+    // 雲端載入失敗，仍嘗試掃描本地已有的資料
+    setTimeout(()=>autoScan(),5000);
   }
 }
 

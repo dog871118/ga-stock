@@ -1447,6 +1447,7 @@ async function autoScan(){
     if(groups[i]&&groups[i].stocks&&groups[i].stocks.length>0){
       cur=i;
       render();
+      await new Promise(r=>setTimeout(r,50));
       await scan(i);
     }
   }

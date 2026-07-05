@@ -1451,15 +1451,15 @@ async function scan(gi){
 
 async function autoScan(){
   for(let i=0;i<8;i++){
-    if(groups[i].stocks&&groups[i].stocks.length>0){
+    if(groups[i]&&groups[i].stocks&&groups[i].stocks.length>0){
       cur=i;
       render();
-      await new Promise(r=>setTimeout(r,150));
+      await new Promise(r=>setTimeout(r,300));
       await scan(i);
+      await new Promise(r=>setTimeout(r,300));
     }
   }
-  const first = groups.findIndex(g=>g.stocks&&g.stocks.length>0);
-  cur = first >= 0 ? first : 0;
+  cur=0;
   render();
 }
 
@@ -1489,7 +1489,7 @@ async function loadCloud(){
     const res=await fetch('/api/sync-load',{signal:AbortSignal.timeout(45000)});
     const j=await res.json();
     const rows=j.data||[];
-    if(rows.length===0){btn.textContent='⬇ 載雲端';btn.disabled=false;setTimeout(()=>autoScan(),2000);return;}
+    if(rows.length===0){btn.textContent='⬇ 載雲端';btn.disabled=false;cur=0;setTimeout(()=>autoScan(),2000);return;}
     const ng=DN.map((n,i)=>({name:n,stocks:[]}));
     rows.forEach(row=>{
       const gi=parseInt(row[0]);
@@ -1502,14 +1502,14 @@ async function loadCloud(){
     groups=ng; sgr(); 
     // 強制清掉舊版 key，避免下次讀到過期資料
     localStorage.removeItem('ga_g_v4');
-    render();
+    cur=0; render();
     btn.textContent='✓ 已載入';
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},1500);
     setTimeout(()=>autoScan(),2000);
   }catch(e){
     btn.textContent='✗ '+(e.message||'失敗'); btn.disabled=false;
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},3000);
-    setTimeout(()=>autoScan(),2000);
+    cur=0; setTimeout(()=>autoScan(),2000);
   }
 }
 

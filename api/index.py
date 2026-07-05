@@ -1445,13 +1445,12 @@ async function scan(gi){
 async function autoScan(){
   for(let i=0;i<8;i++){
     if(groups[i].stocks&&groups[i].stocks.length>0){
-      cur=i; render(); await scan(i);
+      cur=i; render();
+      try{ await scan(i); }catch(e){}
     }
   }
-  if(cur>=8){
-    cur=groups.findIndex(g=>g.stocks&&g.stocks.length>0);
-    if(cur<0) cur=0;
-  }
+  const first=groups.findIndex(g=>g.stocks&&g.stocks.length>0);
+  cur=first>=0?first:0;
   render();
 }
 

@@ -1389,10 +1389,7 @@ async function scan(gi){
   const stocks=groups[gi].stocks;
   if(!stocks||stocks.length===0){ return; }
   savePreScanSigs();
-
-  // 每次重取按鈕，避免 autoScan 切換群組後按鈕失效
-  const getBtn = () => document.getElementById('scanBtn');
-  const btn = getBtn();
+  const btn=document.getElementById('scanBtn');
   if(btn){ btn.disabled=true; btn.textContent='查詢中…'; }
 
   const ids=stocks.map(s=>s.id).join(',');
@@ -1437,16 +1434,12 @@ async function scan(gi){
     groups[gi].stocks = sortBySignal(groups[gi].stocks);
     groups[gi].lastUpdate='更新：'+ts(); sgr(); saveSigs(); saveScores();
   }catch(e){
-    const b = getBtn();
-    if(b){ b.textContent='✗ 查詢失敗';
-      setTimeout(()=>{ const bb=getBtn(); if(bb){ bb.disabled=false; bb.textContent='⚡ 掃描'; }},3000);
+    if(btn){ btn.textContent='✗ 查詢失敗';
+      setTimeout(()=>{ if(btn){ btn.disabled=false; btn.textContent='⚡ 掃描'; }},3000);
     }
-    render();
-    return;
   }
+  if(btn){ btn.disabled=false; btn.textContent='⚡ 掃描'; }
   render();
-  const b2 = getBtn();
-  if(b2){ b2.disabled=false; b2.textContent='⚡ 掃描'; }
 }
 
 async function autoScan(){
@@ -1454,9 +1447,7 @@ async function autoScan(){
     if(groups[i]&&groups[i].stocks&&groups[i].stocks.length>0){
       cur=i;
       render();
-      await new Promise(r=>setTimeout(r,300));
       await scan(i);
-      await new Promise(r=>setTimeout(r,300));
     }
   }
   cur=0;

@@ -1489,7 +1489,7 @@ async function loadCloud(){
     const res=await fetch('/api/sync-load',{signal:AbortSignal.timeout(45000)});
     const j=await res.json();
     const rows=j.data||[];
-    if(rows.length===0){alert('雲端無資料');btn.textContent='⬇ 載雲端';btn.disabled=false;return;}
+    if(rows.length===0){btn.textContent='⬇ 載雲端';btn.disabled=false;setTimeout(()=>autoScan(),2000);return;}
     const ng=DN.map((n,i)=>({name:n,stocks:[]}));
     rows.forEach(row=>{
       const gi=parseInt(row[0]);
@@ -1505,12 +1505,11 @@ async function loadCloud(){
     render();
     btn.textContent='✓ 已載入';
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},1500);
-    setTimeout(()=>autoScan(),5000);
+    setTimeout(()=>autoScan(),2000);
   }catch(e){
     btn.textContent='✗ '+(e.message||'失敗'); btn.disabled=false;
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},3000);
-    // 雲端載入失敗，仍嘗試掃描本地已有的資料
-    setTimeout(()=>autoScan(),5000);
+    setTimeout(()=>autoScan(),2000);
   }
 }
 

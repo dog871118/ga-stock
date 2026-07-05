@@ -1097,61 +1097,71 @@ function calcScore(s) {
   let sw = 0, sh = 0;
   const swR = [], shR = [];
 
-  // ── 波段強度分 ──────────────────────────────
-  // 1. 週線訊號 (25分)
-  if      (wA==='買進') { sw+=25; swR.push('週線買進'); }
-  else if (wA==='持有') {
-    const pts = wD<=4 ? 20 : wD<=10 ? 18 : wD<=20 ? 15 : 12;
-    sw+=pts; swR.push(`週線持有${wD}週`);
-  }
-  else if (wA==='賣出') { sw-=8;  swR.push('週線賣出'); }
-  // 空手：0分
+  // ── 趨勢健康分（重寫）──────────────────────
+  // 核心：趨勢強度 = 均線斜率 + 均線排列 + 週日線持續性 + RS
+  // 不再讓「週線買進」優於「週線持有多週」
 
-  // 2. 日線訊號 (20分)
-  if      (dA==='買進') { sw+=20; swR.push('日線買進'); }
-  else if (dA==='持有') {
-    const pts = dD<=3 ? 16 : dD<=7 ? 14 : dD<=15 ? 12 : 10;
-    sw+=pts; swR.push(`日線持有${dD}天`);
-  }
-  else if (dA==='賣出') { sw-=8;  swR.push('日線賣出'); }
-
-  // 3. 均線多頭排列 (20分)
+  // 1. 均線多頭排列（30分）— 最重要，反映趨勢結構
   if (s.ma5 && s.ma20 && s.ma60d) {
     if (s.price > s.ma5 && s.ma5 > s.ma20 && s.ma20 > s.ma60d) {
-      sw+=20; swR.push('均線完整多排');
+      sw+=30; swR.push('均線完整多排');
     } else if (s.price > s.ma5 && s.ma5 > s.ma20) {
-      sw+=13; swR.push('MA5>MA20多排');
+      sw+=18; swR.push('MA5>MA20多排');
     } else if (s.price > s.ma20) {
-      sw+=7;  swR.push('站上MA20');
+      sw+=8;  swR.push('站上MA20');
     } else if (s.price < s.ma60d) {
-      sw-=5;  swR.push('跌破MA60');
+      sw-=10; swR.push('跌破MA60');
     }
   } else if (s.ma5 && s.ma20) {
-    if (s.price > s.ma5 && s.ma5 > s.ma20) { sw+=10; swR.push('MA5>MA20多排'); }
-    else if (s.price > s.ma20)              { sw+=5;  swR.push('站上MA20'); }
+    if (s.price > s.ma5 && s.ma5 > s.ma20) { sw+=15; swR.push('MA5>MA20多排'); }
+    else if (s.price > s.ma20)              { sw+=6;  swR.push('站上MA20'); }
   }
 
-  // 4. 週日線共振加成 (10分)
-  if ((wA==='買進'||wA==='持有') && (dA==='買進'||dA==='持有')) {
-    sw+=10; swR.push('週日線共振');
-  }
-
-  // 5. 創10日新高 (10分)
-  if (s.new_high_10) { sw+=10; swR.push('創10日新高'); }
-
-  // 6. 大盤波段溫度加權 (10分)
+  // 2. 均線斜率（25分）— 三條均線同時向上才是真趨勢
   {
-    const adj = Math.round((mktSwing - 50) / 10);  // -5 ~ +5
-    sw += adj;
-    if (adj > 0)      swR.push(`大盤波段偏熱+${adj}`);
-    else if (adj < 0) swR.push(`大盤波段偏冷${adj}`);
+    let slopeUp = 0;
+    if (s.ma5_slope  != null && s.ma5_slope  > 0) slopeUp++;
+    if (s.ma10_slope != null && s.ma10_slope > 0) slopeUp++;
+    if (s.ma20_slope != null && s.ma20_slope > 0) slopeUp++;
+    if      (slopeUp === 3) { sw+=25; swR.push('三線同向上'); }
+    else if (slopeUp === 2) { sw+=15; swR.push('雙線向上'); }
+    else if (slopeUp === 1) { sw+=5; }
+    else                    { sw-=8;  swR.push('均線走平'); }
   }
 
-  // 7. 持有天數合理性修正
-  if (dA==='持有') {
-    if (dD > 25) { sw-=5; swR.push('持有過長留意'); }
-    if (dD === 1) { sw+=3; swR.push('剛確認持有'); }
+  // 3. 週日線持續性（25分）— 持有越久代表趨勢越穩
+  if (wA==='持有' || wA==='買進') {
+    // 週線：持有天數越長越穩定（買進剛翻多不算持久）
+    if      (wD >= 8)  { sw+=15; swR.push(`週線持有${wD}週穩`); }
+    else if (wD >= 4)  { sw+=12; swR.push(`週線持有${wD}週`); }
+    else if (wD >= 1)  { sw+=8;  swR.push(`週線持有${wD}週`); }
+    if (wA==='賣出') { sw-=8; swR.push('週線賣出'); }
+  } else if (wA==='賣出') { sw-=8; swR.push('週線賣出'); }
+
+  if (dA==='持有' || dA==='買進') {
+    if      (dD >= 10) { sw+=10; swR.push(`日線持有${dD}天穩`); }
+    else if (dD >= 5)  { sw+=8; }
+    else if (dD >= 1)  { sw+=5; }
+  } else if (dA==='賣出') { sw-=8; swR.push('日線賣出'); }
+
+  // 4. RS 相對強度（10分）— 持續跑贏大盤才是真強勢
+  if (s.rs_20 != null) {
+    if      (s.rs_20 >= 10) { sw+=10; swR.push(`RS超強+${s.rs_20}%`); }
+    else if (s.rs_20 >= 5)  { sw+=7;  swR.push(`RS強+${s.rs_20}%`); }
+    else if (s.rs_20 >= 0)  { sw+=3; }
+    else if (s.rs_20 < -5)  { sw-=5;  swR.push('RS落後大盤'); }
   }
+
+  // 5. 大盤波段溫度加權（±5）
+  {
+    const adj = Math.round((mktSwing - 50) / 10);
+    sw += adj;
+    if (adj > 0)      swR.push(`大盤偏熱+${adj}`);
+    else if (adj < 0) swR.push(`大盤偏冷${adj}`);
+  }
+
+  // 6. 創10日新高加成
+  if (s.new_high_10) { sw+=5; swR.push('創10日新高'); }
 
   sw = Math.max(0, Math.min(100, sw));
 
@@ -1726,10 +1736,13 @@ function rc(s,gi,si,readonly=false){
       if (!lf) return '';
       const icons = ['①','②','③','④'];
       const labels = ['低位','剛買','量啟','低乖'];
-      let dotHtml = icons.map((ic,i)=>{
+      const condLabels = ['①位置','②剛買','③量啟','④低乖'];
+      let dotHtml = condLabels.map((lbl,i)=>{
         const ok = lf.checks[i];
-        const tip = ok ? lf.passed.find(p=>p) : lf.failed[0];
-        return '<span style="font-size:11px;padding:2px 6px;border-radius:4px;margin-right:3px;background:'+(ok?'rgba(255,69,58,.2)':'rgba(255,255,255,.06)')+';color:'+(ok?'#ff453a':'#556a80')+'">'+ic+(ok?'✓':'✗')+'</span>';
+        const detail = ok
+          ? (lf.passed[lf.checks.slice(0,i).filter(Boolean).length] || '')
+          : (lf.failed[lf.checks.slice(0,i).filter(v=>!v).length]  || '');
+        return '<span style="font-size:10.5px;padding:2px 7px;border-radius:4px;margin-right:3px;margin-bottom:2px;display:inline-block;background:'+(ok?'rgba(255,69,58,.18)':'rgba(255,255,255,.05)')+';color:'+(ok?'#ff453a':'#666e7a')+'">'+lbl+(ok?'✓':'✗')+(detail?' '+detail:'')+'</span>';
       }).join('');
       const allColor = lf.allPass ? '#ff453a' : lf.passCount>=3 ? '#ff9f0a' : '#556a80';
       const allLabel = lf.allPass ? '🎯 起漲候選' : lf.passCount>=3 ? '⚬ 接近條件' : '';

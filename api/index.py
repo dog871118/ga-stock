@@ -853,6 +853,65 @@ function posRiskHtml(s) {
   return `<div style="margin-top:4px;padding:5px 8px;background:rgba(255,255,255,.04);border-radius:6px;font-size:10.5px;display:flex;flex-wrap:wrap;gap:6px 10px">${parts.join('')}</div>`;
 }
 
+// ===== 主升段起漲條件篩選（獨立於打分制，並存觀察用）=====
+// 四個硬條件同時成立才是起漲候選，不打分數
+function calcLaunchFilter(s) {
+  if (!s || !s.daily) return null;
+  const dA = (s.daily && s.daily.action) || '空手';
+  const dD = (s.daily && s.daily.days)   || 0;
+
+  const passed = [];
+  const failed = [];
+  const checks = [];
+
+  // ① 位置夠低：距60日低點漲幅 < 25%
+  let c1 = false;
+  if (s.gain_60d != null) {
+    c1 = s.gain_60d <= 25;
+    if (c1) passed.push('低位+'+s.gain_60d+'%');
+    else    failed.push('偏高+'+s.gain_60d+'%');
+  } else { failed.push('位置不足'); }
+  checks.push(c1);
+
+  // ② 訊號剛翻買進：日線買進 1–5天
+  let c2 = false;
+  if (dA === '買進' && dD >= 1 && dD <= 5) {
+    c2 = true; passed.push('買進第'+dD+'天');
+  } else if (dA === '買進') {
+    failed.push('買進已'+dD+'天');
+  } else {
+    failed.push('非買進訊號');
+  }
+  checks.push(c2);
+
+  // ③ 量能洗盤完成：凹洞量 OR 近3日量遞增
+  let c3 = false;
+  if (s.vol_hollow)       { c3 = true; passed.push('凹洞量'); }
+  else if (s.vol_3d_inc)  { c3 = true; passed.push('量遞增'); }
+  else                    { failed.push('量未啟動'); }
+  checks.push(c3);
+
+  // ④ 無追高風險：MA60乖離 < 25%
+  let c4 = false;
+  const bias = s.ma60_bias != null ? s.ma60_bias :
+               (s.ma60d && s.price ? Math.round((s.price-s.ma60d)/s.ma60d*100) : null);
+  if (bias != null) {
+    c4 = bias <= 25;
+    if (c4) passed.push('乖離'+bias+'%');
+    else    failed.push('乖離'+bias+'%高');
+  } else { failed.push('MA60不足'); }
+  checks.push(c4);
+
+  const passCount = checks.filter(Boolean).length;
+  return {
+    passCount,
+    allPass: passCount === 4,
+    passed,
+    failed,
+    checks
+  };
+}
+
 // ===== 主升段起漲分（Stage 2 Launch Score）=====
 // 核心目的：找出正要從整理區啟動主升段的股票（買在起漲點）
 // 架構：位置判斷40 + 訊號時機30 + 量能洗盤20 + 均線位置10
@@ -1291,9 +1350,15 @@ function renderRanking(type) {
     titleText = '▪ 進場時機 前20名';
     emptyText = '請先掃描自選股 1–8 組';
   } else {
-    sorted = all.filter(x => x.ms).sort((a,b) => b.ms.score - a.ms.score).slice(0,20);
-    titleText = '🚀 主升段起漲 前20名';
-    emptyText = '請先掃描自選股 1–8 組';
+    // 起漲候選：四條件全通過，依 gain_60d（距低點漲幅）由低到高排，位置越低越優先
+    sorted = all
+      .filter(x => { const lf = calcLaunchFilter(x.s); return lf && lf.allPass; })
+      .sort((a,b) => (a.s.gain_60d||999) - (b.s.gain_60d||999))
+      .slice(0,20);
+    // 補上 lf 給後面渲染用
+    sorted = sorted.map(x => ({ ...x, lf: calcLaunchFilter(x.s) }));
+    titleText = '🎯 主升段起漲候選';
+    emptyText = '目前無符合全部四個起漲條件的股票（位置低＋剛買進＋量啟動＋低乖離）';
   }
 
   if (sorted.length === 0) {
@@ -1394,6 +1459,11 @@ function renderRanking(type) {
         ${s.price ? `<span style="font-size:13px;font-weight:700;color:#ffd60a">${s.price}</span>` : ''}
       </div>
       ${reasonHtml}
+      ${(()=>{
+        const lf = calcLaunchFilter(s);
+        if (!lf || type !== 'rank_momentum') return '';
+        return '<div style="margin-top:4px;font-size:10.5px;color:#ff453a">🎯 '+lf.passed.join('・')+'</div>';
+      })()}
       ${posRiskHtml(s)}
     </div>`;
   });
@@ -1650,6 +1720,27 @@ function rc(s,gi,si,readonly=false){
       if(ms.warns.length>0)   html+='<div style="font-size:10.5px;color:#ff453a;line-height:1.7;margin-top:1px">⚠ '+ms.warns.join('・')+'</div>';
       html+='</div>';
       return html;
+    })()}
+    ${(()=>{
+      const lf = calcLaunchFilter(s);
+      if (!lf) return '';
+      const icons = ['①','②','③','④'];
+      const labels = ['低位','剛買','量啟','低乖'];
+      let dotHtml = icons.map((ic,i)=>{
+        const ok = lf.checks[i];
+        const tip = ok ? lf.passed.find(p=>p) : lf.failed[0];
+        return '<span style="font-size:11px;padding:2px 6px;border-radius:4px;margin-right:3px;background:'+(ok?'rgba(255,69,58,.2)':'rgba(255,255,255,.06)')+';color:'+(ok?'#ff453a':'#556a80')+'">'+ic+(ok?'✓':'✗')+'</span>';
+      }).join('');
+      const allColor = lf.allPass ? '#ff453a' : lf.passCount>=3 ? '#ff9f0a' : '#556a80';
+      const allLabel = lf.allPass ? '🎯 起漲候選' : lf.passCount>=3 ? '⚬ 接近條件' : '';
+      return '<div style="margin-top:4px;padding:5px 8px;background:rgba(255,255,255,.03);border-radius:6px;border:1px solid rgba(255,255,255,.08)">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">'
+        +'<span style="font-size:10.5px;color:#7aa8d0">起漲條件篩選 '+lf.passCount+'/4</span>'
+        +(allLabel?'<span style="font-size:10.5px;color:'+allColor+';font-weight:700">'+allLabel+'</span>':'')
+        +'</div>'
+        +dotHtml
+        +(lf.allPass?'<div style="font-size:10px;color:#a0b4c8;margin-top:3px">✓ '+lf.passed.join('・')+'</div>':'')
+        +'</div>';
     })()}
     ${posRiskHtml(s)}
   </div>`;

@@ -722,7 +722,7 @@ function allGroups() {
     { name:'訊號異動', stocks:[], special:'change' },
     { name:'趨勢前20',  stocks:[], special:'rank_swing' },
     { name:'時機前20',  stocks:[], special:'rank_short' },
-    { name:'起漲前20',  stocks:[], special:'rank_momentum' },
+    { name:'主升前20',  stocks:[], special:'rank_momentum' },
     { name:'5日線買點', stocks:[], special:'near5' },
     { name:'月線買點', stocks:[], special:'near20' },
     { name:'季線買點', stocks:[], special:'near60' },
@@ -787,9 +787,9 @@ function saveScores() {
       const sc = calcScore(s);
       const ms = calcMomentumScore(s);
       d[s.id] = {
-        swing: sc ? sc.swing : null,
-        short: sc ? sc.short : null,
-        momentum: ms ? ms.score : null,
+        swing:    sc ? sc.swing    : null,
+        short:    sc ? sc.short    : null,
+        momentum: ms ? ms.score    : null,
         date: dk()
       };
     });
@@ -853,69 +853,10 @@ function posRiskHtml(s) {
   return `<div style="margin-top:4px;padding:5px 8px;background:rgba(255,255,255,.04);border-radius:6px;font-size:10.5px;display:flex;flex-wrap:wrap;gap:6px 10px">${parts.join('')}</div>`;
 }
 
-// ===== 主升段起漲條件篩選（獨立於打分制，並存觀察用）=====
-// 四個硬條件同時成立才是起漲候選，不打分數
-function calcLaunchFilter(s) {
-  if (!s || !s.daily) return null;
-  const dA = (s.daily && s.daily.action) || '空手';
-  const dD = (s.daily && s.daily.days)   || 0;
-
-  const passed = [];
-  const failed = [];
-  const checks = [];
-
-  // ① 位置夠低：距60日低點漲幅 < 25%
-  let c1 = false;
-  if (s.gain_60d != null) {
-    c1 = s.gain_60d <= 25;
-    if (c1) passed.push('低位+'+s.gain_60d+'%');
-    else    failed.push('偏高+'+s.gain_60d+'%');
-  } else { failed.push('位置不足'); }
-  checks.push(c1);
-
-  // ② 訊號剛翻買進：日線買進 1–5天
-  let c2 = false;
-  if (dA === '買進' && dD >= 1 && dD <= 5) {
-    c2 = true; passed.push('買進第'+dD+'天');
-  } else if (dA === '買進') {
-    failed.push('買進已'+dD+'天');
-  } else {
-    failed.push('非買進訊號');
-  }
-  checks.push(c2);
-
-  // ③ 量能洗盤完成：凹洞量 OR 近3日量遞增
-  let c3 = false;
-  if (s.vol_hollow)       { c3 = true; passed.push('凹洞量'); }
-  else if (s.vol_3d_inc)  { c3 = true; passed.push('量遞增'); }
-  else                    { failed.push('量未啟動'); }
-  checks.push(c3);
-
-  // ④ 無追高風險：MA60乖離 < 25%
-  let c4 = false;
-  const bias = s.ma60_bias != null ? s.ma60_bias :
-               (s.ma60d && s.price ? Math.round((s.price-s.ma60d)/s.ma60d*100) : null);
-  if (bias != null) {
-    c4 = bias <= 25;
-    if (c4) passed.push('乖離'+bias+'%');
-    else    failed.push('乖離'+bias+'%高');
-  } else { failed.push('MA60不足'); }
-  checks.push(c4);
-
-  const passCount = checks.filter(Boolean).length;
-  return {
-    passCount,
-    allPass: passCount === 4,
-    passed,
-    failed,
-    checks
-  };
-}
-
-// ===== 主升段起漲分（Stage 2 Launch Score）=====
-// 邏輯：第一關確認主升段（必要條件，不過=0分）
-//       第二關判斷起漲時機（離起漲越近分越高）
-//       第三關量能加分修正
+// ===== 主升段分（主升段強度評分）=====
+// 架構：量能品質30 + 趨勢強度25 + 價格動能20 + 週期共振15 + 相對強度RS10
+// 最後套用健康度修正(±10) 及 市場環境係數
+// 分數越高代表主升段動能越強，信昌電這種大漲股自然高分
 function calcMomentumScore(s) {
   if (!s || !s.daily) return null;
   const d  = s.daily  || {};
@@ -923,80 +864,117 @@ function calcMomentumScore(s) {
   const dA = d.action || '空手';
   const wA = w.action || '空手';
   const wD = w.days   || 0;
-  const dD = d.days   || 0;
 
+  let score = 0;
   const reasons = [];
   const warns   = [];
 
-  // ══ 第一關：主升段確認（三個必要條件，缺一=0分）══
-  // 條件A：週線在多方（持有或買進）
-  const condA = (wA === '持有' || wA === '買進');
-  // 條件B：均線多頭排列（MA5 > MA20 > MA60）
-  const condB = !!(s.ma5 && s.ma20 && s.ma60d &&
-                   s.ma5 > s.ma20 && s.ma20 > s.ma60d);
-  // 條件C：日線不能是賣出或空手
-  const condC = (dA === '買進' || dA === '持有');
-
-  if (!condA) { warns.push('週線未在多方'); }
-  if (!condB) { warns.push('均線未多頭排列'); }
-  if (!condC) { warns.push('日線非買進持有'); }
-
-  // 三關必須全過，否則直接0分
-  if (!condA || !condB || !condC) {
-    return { score: 0, reasons: [], warns: warns };
+  // ── 一、量能品質（30分）──────────────────────
+  let volPts = 0;
+  if (s.vol_hollow)     { volPts += 10; reasons.push('凹洞量啟動'); }
+  if (s.vol_3d_inc)     { volPts += 10; reasons.push('三日量遞增'); }
+  if (s.vol_ratio != null && s.vol_ratio >= 1.3) { volPts += 8; reasons.push('量比'+s.vol_ratio+'倍'); }
+  else if (s.vol_ratio != null && s.vol_ratio >= 1.0) { volPts += 3; }
+  if (s.vol_5d_slope_up){ volPts += 6; reasons.push('均量上升'); }
+  if (s.vol_no_spike)   { volPts += 6; }
+  if (s.vol_cv10 != null) {
+    if (s.vol_cv10 < 0.3)      { volPts += 5; reasons.push('量縮穩定'); }
+    else if (s.vol_cv10 > 0.8) { volPts -= 3; warns.push('量能紊亂'); }
   }
+  score += Math.min(30, Math.max(0, volPts));
 
-  // 主升段確認，記錄理由
-  reasons.push('週線'+(wA==='買進'?'買進':'持有'+wD+'週'));
-  reasons.push('均線多排');
-
-  // ══ 第二關：起漲時機（基礎分 0–80）══
-  let score = 0;
-  const ydA = (s.yesterday && s.yesterday.action) || '';
-
-  if (dA === '買進') {
-    if (ydA === '空手' || ydA === '賣出' || ydA === '') {
-      // 今天剛翻買進：最接近起漲點
-      score = 90; reasons.push('今日剛翻買進');
-    } else if (dD <= 2) {
-      score = 82; reasons.push('買進第'+dD+'天');
-    } else if (dD <= 5) {
-      score = 70; reasons.push('買進第'+dD+'天');
-    } else if (dD <= 10) {
-      score = 55; reasons.push('買進第'+dD+'天');
-    } else {
-      // 買進超過10天：主升段中但非起漲點
-      score = 35; reasons.push('買進已'+dD+'天');
+  // ── 二、趨勢強度（25分）──────────────────────
+  let trendPts = 0;
+  let slopeUp = 0;
+  if (s.ma5_slope  != null && s.ma5_slope  > 0) slopeUp++;
+  if (s.ma10_slope != null && s.ma10_slope > 0) slopeUp++;
+  if (s.ma20_slope != null && s.ma20_slope > 0) slopeUp++;
+  if      (slopeUp === 3) { trendPts += 12; reasons.push('三線同向上'); }
+  else if (slopeUp === 2) { trendPts += 7;  reasons.push('雙線向上'); }
+  else if (slopeUp === 1) { trendPts += 3; }
+  else                    { trendPts -= 5;  warns.push('均線走平'); }
+  if (s.ma5 && s.ma20 && s.ma60d) {
+    if (s.price > s.ma5 && s.ma5 > s.ma20 && s.ma20 > s.ma60d) {
+      trendPts += 8; reasons.push('均線完整多排');
+    } else if (s.price > s.ma5 && s.ma5 > s.ma20) {
+      trendPts += 5;
     }
-  } else if (dA === '持有') {
-    // 持有中：主升段確認但不是買進起漲點
-    if (dD <= 3)       { score = 25; reasons.push('持有'+dD+'天'); }
-    else if (dD <= 10) { score = 18; reasons.push('持有'+dD+'天'); }
-    else               { score = 10; reasons.push('持有'+dD+'天'); }
+  }
+  if      (wA === '買進')              { trendPts += 5; }
+  else if (wA === '持有' && wD >= 2)   { trendPts += 3; }
+  score += Math.min(25, Math.max(0, trendPts));
+
+  // ── 三、價格動能（20分）──────────────────────
+  let pricePts = 0;
+  if (s.price && s.prev_price) {
+    const pct = (s.price / s.prev_price - 1) * 100;
+    if      (pct > 4)  { pricePts += 8; reasons.push('今日強漲+'+pct.toFixed(1)+'%'); }
+    else if (pct > 2)  { pricePts += 5; reasons.push('今日上漲+'+pct.toFixed(1)+'%'); }
+    else if (pct > 0)  { pricePts += 2; }
+    else if (pct < -3) { pricePts -= 5; warns.push('今日下跌'+pct.toFixed(1)+'%'); }
+  }
+  if (s.close_pos != null) {
+    if      (s.close_pos >= 0.8) { pricePts += 5; reasons.push('收盤近日高'); }
+    else if (s.close_pos >= 0.5) { pricePts += 2; }
+    else if (s.close_pos < 0.2)  { pricePts -= 3; warns.push('收盤近日低'); }
+  }
+  if (s.new_high_52w) {
+    pricePts += 7; reasons.push('52週新高');
+  } else if (s.high_52w && s.price) {
+    const distPct = (s.high_52w - s.price) / s.high_52w * 100;
+    if      (distPct <= 5)  { pricePts += 5; reasons.push('距52週高<5%'); }
+    else if (distPct <= 10) { pricePts += 3; }
+    else if (distPct <= 15) { pricePts += 1; }
+  }
+  if (s.new_high_10) { pricePts += 3; }
+  score += Math.min(20, Math.max(0, pricePts));
+
+  // ── 四、週期共振（15分）──────────────────────
+  let resonPts = 0;
+  if      (dA === '買進') { resonPts += 5; }
+  else if (dA === '持有') { resonPts += 2; }
+  if      (wA === '持有') { resonPts += 5; }
+  else if (wA === '買進') { resonPts += 4; }
+  if ((wA === '買進' || wA === '持有') && wD <= 2) {
+    resonPts += 5; reasons.push('週線剛翻多');
+  }
+  if (dA === '買進' && wA === '買進') { resonPts += 3; reasons.push('日週雙買'); }
+  score += Math.min(15, Math.max(0, resonPts));
+
+  // ── 五、相對強度 RS（10分）──────────────────
+  if (s.rs_20 != null) {
+    if      (s.rs_20 >= 10) { score += 10; reasons.push('RS超強+'+s.rs_20+'%'); }
+    else if (s.rs_20 >= 5)  { score += 7;  reasons.push('RS強+'+s.rs_20+'%'); }
+    else if (s.rs_20 >= 0)  { score += 4; }
+    else if (s.rs_20 >= -5) { score += 0;  warns.push('RS略弱'); }
+    else                    { score -= 5;  warns.push('RS弱'+s.rs_20+'%'); }
   }
 
-  // ══ 第三關：量能加分（最多+15）══
-  if (s.vol_hollow)    { score += 10; reasons.push('凹洞量完成'); }
-  if (s.vol_3d_inc)    { score += 5;  reasons.push('量能遞增'); }
-  if (s.rs_20 != null && s.rs_20 >= 5) {
-    score += 5; reasons.push('RS跑贏+'+s.rs_20+'%');
+  // ── 六、健康度修正（±10）────────────────────
+  const totalK = (s.red_k_10||0) + (s.black_k_10||0);
+  if (totalK > 0) {
+    const redRatio = (s.red_k_10||0) / totalK;
+    if      (redRatio >= 0.7) { score += 5; reasons.push('近10日多紅K'); }
+    else if (redRatio <= 0.3) { score -= 5; warns.push('近10日多黑K'); }
   }
+  if ((s.long_upper_shadow_10||0) >= 4) { score -= 5; warns.push('上影線偏多'); }
 
-  // 位置過熱：只顯示警告，不扣分（位置由位置風險欄位處理）
-  if (s.gain_60d != null && s.gain_60d > 80) {
-    warns.push('距低點+'+s.gain_60d+'%注意追高');
+  // ── 七、扣分機制 ────────────────────────────
+  if (s.vol_ratio != null && s.vol_ratio >= 3.0 && s.prev_price && s.price) {
+    const pct = (s.price / s.prev_price - 1) * 100;
+    if (pct < 2) { score -= 15; warns.push('高檔爆量警示'); }
   }
-  if (s.ma60_bias != null && s.ma60_bias > 60) {
-    warns.push('MA60乖離+'+s.ma60_bias+'%過熱');
-  }
+  if (s.ma20  && s.price < s.ma20)  { score -= 10; warns.push('跌破MA20'); }
+  if (s.ma60d && s.price < s.ma60d) { score -= 5;  warns.push('跌破MA60'); }
+  if (s.rs_20 != null && s.rs_20 < -10) { score -= 10; warns.push('RS極弱'); }
 
-  // 大盤環境係數
+  // ── 八、市場環境係數 ─────────────────────────
   let envCoef = 1.0;
   try {
     if (typeof MKT !== 'undefined' && MKT) {
       const mktSwing = Number((MKT['波段溫度']||{})['分數'] || 50);
-      if      (mktSwing < 30) envCoef = 0.8;
-      else if (mktSwing < 45) envCoef = 0.9;
+      if      (mktSwing < 30) envCoef = 0.75;
+      else if (mktSwing < 45) envCoef = 0.88;
       else if (mktSwing > 80) envCoef = 1.05;
     }
   } catch(e) {}
@@ -1299,14 +1277,9 @@ function renderRanking(type) {
     emptyText = '請先掃描自選股 1–8 組';
   } else {
     // 起漲候選：四條件全通過，依 gain_60d（距低點漲幅）由低到高排，位置越低越優先
-    sorted = all
-      .filter(x => { const lf = calcLaunchFilter(x.s); return lf && lf.allPass; })
-      .sort((a,b) => (a.s.gain_60d||999) - (b.s.gain_60d||999))
-      .slice(0,20);
-    // 補上 lf 給後面渲染用
-    sorted = sorted.map(x => ({ ...x, lf: calcLaunchFilter(x.s) }));
-    titleText = '🎯 主升段起漲候選';
-    emptyText = '目前無符合全部四個起漲條件的股票（位置低＋剛買進＋量啟動＋低乖離）';
+    sorted = all.filter(x => x.ms).sort((a,b) => b.ms.score - a.ms.score).slice(0,20);
+    titleText = '🚀 主升段 前20名';
+    emptyText = '請先掃描自選股 1–8 組';
   }
 
   if (sorted.length === 0) {
@@ -1353,10 +1326,10 @@ function renderRanking(type) {
     if (type === 'rank_momentum' && ms && prev.momentum != null) {
       const delta = ms.score - prev.momentum;
       let label = '', labelColor = '#ffd60a';
-      if (ms.score >= 75 && delta >= 3)       { label = '🚀強勢起漲中'; labelColor = '#ff453a'; }
-      else if (ms.score >= 75)                 { label = '✅起漲確認';   labelColor = '#ff9f0a'; }
-      else if (prev.momentum >= 75 && ms.score >= 60 && ms.score < 75) { label = '⚠️起漲受阻'; labelColor = '#ffd60a'; }
-      else if (prev.momentum >= 75 && ms.score < 60 && s.ma20 && s.price < s.ma20) { label = '❌起漲失敗'; labelColor = '#30d158'; }
+      if (ms.score >= 75 && delta >= 3)       { label = '🚀強勢主升中'; labelColor = '#ff453a'; }
+      else if (ms.score >= 75)                 { label = '✅主升確認';   labelColor = '#ff9f0a'; }
+      else if (prev.momentum >= 75 && ms.score >= 60 && ms.score < 75) { label = '⚠️主升受阻'; labelColor = '#ffd60a'; }
+      else if (prev.momentum >= 75 && ms.score < 60 && s.ma20 && s.price < s.ma20) { label = '❌主升失敗'; labelColor = '#30d158'; }
       else if (prev.momentum >= 75 && ms.score < 60)  { label = '📉動能退潮'; labelColor = '#ffd60a'; }
       else if (ms.score >= 45 && delta >= 3)   { label = '🔄蓄勢向上'; labelColor = '#ff9f0a'; }
       else if (ms.score >= 45 && delta <= -3)  { label = '📉動能退潮'; labelColor = '#ffd60a'; }
@@ -1641,10 +1614,10 @@ function rc(s,gi,si,readonly=false){
         const d = sc - prevMsc;
         if (Math.abs(d)>=1){ const c=d>0?'#ff453a':'#30d158'; msDelta=`<span style="font-size:10px;color:${c};margin-left:4px">${d>0?'▲':'▼'}${Math.abs(d)}</span>`; }
         // 狀態標籤
-        if      (sc>=75 && d>=3)                                          { msStatus='🚀強勢起漲中'; msStatusColor='#ff453a'; }
-        else if (sc>=75 && d>-5)                                          { msStatus='✅起漲確認';  msStatusColor='#ff9f0a'; }
-        else if (prevMsc>=75 && sc>=60 && sc<75)                          { msStatus='⚠️起漲受阻';  msStatusColor='#ffd60a'; }
-        else if (prevMsc>=75 && sc<60 && s.ma20 && s.price<s.ma20)       { msStatus='❌起漲失敗';  msStatusColor='#30d158'; }
+        if      (sc>=75 && d>=3)                                          { msStatus='🚀強勢主升中'; msStatusColor='#ff453a'; }
+        else if (sc>=75 && d>-5)                                          { msStatus='✅主升確認';  msStatusColor='#ff9f0a'; }
+        else if (prevMsc>=75 && sc>=60 && sc<75)                          { msStatus='⚠️主升受阻';  msStatusColor='#ffd60a'; }
+        else if (prevMsc>=75 && sc<60 && s.ma20 && s.price<s.ma20)       { msStatus='❌主升失敗';  msStatusColor='#30d158'; }
         else if (prevMsc>=75 && sc<60)                                     { msStatus='📉動能退潮';  msStatusColor='#ffd60a'; }
         else if (sc>=45 && d>=3)                                           { msStatus='🔄蓄勢向上';  msStatusColor='#ff9f0a'; }
         else if (sc>=45 && d<=-5)                                          { msStatus='📉動能退潮';  msStatusColor='#ffd60a'; }
@@ -1658,7 +1631,7 @@ function rc(s,gi,si,readonly=false){
       }
       let html='<div style="margin-top:5px;padding:7px 8px;background:rgba(255,159,10,.07);border-radius:7px;border:1px solid rgba(255,159,10,.2)">';
       html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">';
-      html+='<span style="font-size:11px;color:#ff9f0a;font-weight:700">🚀 主升段起漲分</span>';
+      html+='<span style="font-size:11px;color:#ff9f0a;font-weight:700">🚀 主升段分</span>';
       html+='<span style="font-size:12px;font-weight:800;color:'+barColor+'">'+sc+msDelta+' <span style="font-size:10px;color:'+msStatusColor+'">'+msStatus+'</span></span>';
       html+='</div>';
       html+='<div style="height:7px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden;margin-bottom:5px">';

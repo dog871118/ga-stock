@@ -1444,14 +1444,14 @@ async function scan(gi){
 
 async function autoScan(){
   for(let i=0;i<8;i++){
-    if(groups[i]&&groups[i].stocks&&groups[i].stocks.length>0){
-      cur=i;
-      render();
-      await new Promise(r=>setTimeout(r,50));
-      await scan(i);
+    if(groups[i].stocks&&groups[i].stocks.length>0){
+      cur=i; render(); await scan(i);
     }
   }
-  cur=0;
+  if(cur>=8){
+    cur=groups.findIndex(g=>g.stocks&&g.stocks.length>0);
+    if(cur<0) cur=0;
+  }
   render();
 }
 

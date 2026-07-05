@@ -722,6 +722,7 @@ function allGroups() {
     { name:'訊號異動', stocks:[], special:'change' },
     { name:'趨勢前20',  stocks:[], special:'rank_swing' },
     { name:'時機前20',  stocks:[], special:'rank_short' },
+    { name:'起漲前20',  stocks:[], special:'rank_momentum' },
     { name:'5日線買點', stocks:[], special:'near5' },
     { name:'月線買點', stocks:[], special:'near20' },
     { name:'季線買點', stocks:[], special:'near60' },
@@ -784,9 +785,11 @@ function saveScores() {
     (g.stocks||[]).forEach(s => {
       if (!s.daily) return;
       const sc = calcScore(s);
+      const ms = calcMomentumScore(s);
       d[s.id] = {
         swing: sc ? sc.swing : null,
         short: sc ? sc.short : null,
+        momentum: ms ? ms.score : null,
         date: dk()
       };
     });
@@ -811,6 +814,262 @@ function savePreScanSigs() {
 
 function sigOrder(action) {
   return action==='買進'?0: action==='持有'?1: action==='賣出'?2: 3;
+}
+
+// ===== 位置風險輔助函式 =====
+function posRiskHtml(s) {
+  if (!s || !s.price) return '';
+  const parts = [];
+
+  // 距52週低點漲幅
+  if (s.gain_52w != null) {
+    let color = '#a0b4c8';
+    if (s.gain_52w > 150) color = '#ff453a';
+    else if (s.gain_52w > 60) color = '#ff9f0a';
+    else if (s.gain_52w > 25) color = '#ffd60a';
+    parts.push(`<span style="color:${color}">52週低+${s.gain_52w}%</span>`);
+  }
+
+  // 距60日低點漲幅
+  if (s.gain_60d != null) {
+    let color = '#a0b4c8';
+    if (s.gain_60d > 80) color = '#ff453a';
+    else if (s.gain_60d > 35) color = '#ff9f0a';
+    else if (s.gain_60d > 15) color = '#ffd60a';
+    parts.push(`<span style="color:${color}">60日低+${s.gain_60d}%</span>`);
+  }
+
+  // MA60乖離率＋等級
+  if (s.ma60_bias != null) {
+    let color = '#a0b4c8', label = '';
+    if (s.ma60_bias > 60)      { color = '#ff453a'; label = '🔴嚴重過熱'; }
+    else if (s.ma60_bias > 35) { color = '#ff9f0a'; label = '🟠偏高注意'; }
+    else if (s.ma60_bias > 15) { color = '#ffd60a'; label = '🟡正常拉升'; }
+    else                       { color = '#34c759'; label = '🟢貼近均線'; }
+    parts.push(`<span style="color:${color}">MA60乖離${s.ma60_bias>0?'+':''}${s.ma60_bias}% ${label}</span>`);
+  }
+
+  if (parts.length === 0) return '';
+  return `<div style="margin-top:4px;padding:5px 8px;background:rgba(255,255,255,.04);border-radius:6px;font-size:10.5px;display:flex;flex-wrap:wrap;gap:6px 10px">${parts.join('')}</div>`;
+}
+
+// ===== 主升段起漲條件篩選（獨立於打分制，並存觀察用）=====
+// 四個硬條件同時成立才是起漲候選，不打分數
+function calcLaunchFilter(s) {
+  if (!s || !s.daily) return null;
+  const dA = (s.daily && s.daily.action) || '空手';
+  const dD = (s.daily && s.daily.days)   || 0;
+
+  const passed = [];
+  const failed = [];
+  const checks = [];
+
+  // ① 位置夠低：距60日低點漲幅 < 25%
+  let c1 = false;
+  if (s.gain_60d != null) {
+    c1 = s.gain_60d <= 25;
+    if (c1) passed.push('低位+'+s.gain_60d+'%');
+    else    failed.push('偏高+'+s.gain_60d+'%');
+  } else { failed.push('位置不足'); }
+  checks.push(c1);
+
+  // ② 訊號剛翻買進：日線買進 1–5天
+  let c2 = false;
+  if (dA === '買進' && dD >= 1 && dD <= 5) {
+    c2 = true; passed.push('買進第'+dD+'天');
+  } else if (dA === '買進') {
+    failed.push('買進已'+dD+'天');
+  } else {
+    failed.push('非買進訊號');
+  }
+  checks.push(c2);
+
+  // ③ 量能洗盤完成：凹洞量 OR 近3日量遞增
+  let c3 = false;
+  if (s.vol_hollow)       { c3 = true; passed.push('凹洞量'); }
+  else if (s.vol_3d_inc)  { c3 = true; passed.push('量遞增'); }
+  else                    { failed.push('量未啟動'); }
+  checks.push(c3);
+
+  // ④ 無追高風險：MA60乖離 < 25%
+  let c4 = false;
+  const bias = s.ma60_bias != null ? s.ma60_bias :
+               (s.ma60d && s.price ? Math.round((s.price-s.ma60d)/s.ma60d*100) : null);
+  if (bias != null) {
+    c4 = bias <= 25;
+    if (c4) passed.push('乖離'+bias+'%');
+    else    failed.push('乖離'+bias+'%高');
+  } else { failed.push('MA60不足'); }
+  checks.push(c4);
+
+  const passCount = checks.filter(Boolean).length;
+  return {
+    passCount,
+    allPass: passCount === 4,
+    passed,
+    failed,
+    checks
+  };
+}
+
+// ===== 主升段起漲分（Stage 2 Launch Score）=====
+// 核心目的：找出正要從整理區啟動主升段的股票（買在起漲點）
+// 架構：位置判斷40 + 訊號時機30 + 量能洗盤20 + 均線位置10
+// 漲太多直接重扣，越接近底部越高分
+function calcMomentumScore(s) {
+  if (!s || !s.daily) return null;
+  const d  = s.daily  || {};
+  const w  = s.weekly || { action:'空手', days:0 };
+  const dA = d.action || '空手';
+  const wA = w.action || '空手';
+  const wD = w.days   || 0;
+  const dD = d.days   || 0;
+
+  let score = 0;
+  const reasons = [];
+  const warns   = [];
+
+  // ── 一、位置判斷（40分）— 最重要，漲太多直接低分 ──
+  let posPts = 0;
+
+  // 距60日低點漲幅（核心指標）
+  if (s.gain_60d != null) {
+    if      (s.gain_60d <= 10)  { posPts += 25; reasons.push('距60日低僅+'+s.gain_60d+'%'); }
+    else if (s.gain_60d <= 20)  { posPts += 20; reasons.push('距60日低+'+s.gain_60d+'%'); }
+    else if (s.gain_60d <= 35)  { posPts += 12; }
+    else if (s.gain_60d <= 50)  { posPts += 4;  warns.push('距低點+'+s.gain_60d+'%偏高'); }
+    else if (s.gain_60d <= 80)  { posPts -= 10; warns.push('距低點+'+s.gain_60d+'%已高'); }
+    else                        { posPts -= 20; warns.push('距低點+'+s.gain_60d+'%過熱'); }
+  }
+
+  // 距52週低點漲幅（長線位置）
+  if (s.gain_52w != null) {
+    if      (s.gain_52w <= 30)  { posPts += 15; reasons.push('52週低位+'+s.gain_52w+'%'); }
+    else if (s.gain_52w <= 60)  { posPts += 8;  }
+    else if (s.gain_52w <= 120) { posPts += 2;  }
+    else if (s.gain_52w <= 200) { posPts -= 8;  warns.push('52週漲幅+'+s.gain_52w+'%'); }
+    else                        { posPts -= 20; warns.push('52週大漲+'+s.gain_52w+'%追高風險'); }
+  }
+
+  score += Math.max(-20, Math.min(40, posPts));
+
+  // ── 二、訊號時機（30分）— 剛翻買進才是起漲點 ──
+  let sigPts = 0;
+
+  // 日線剛翻買進（最強訊號）
+  const ydA = (s.yesterday && s.yesterday.action) || '';
+  if (dA === '買進' && (ydA === '空手' || ydA === '賣出' || ydA === '')) {
+    sigPts += 25; reasons.push('日線剛翻買進');
+  } else if (dA === '買進' && dD <= 3) {
+    sigPts += 18; reasons.push('買進僅'+dD+'天');
+  } else if (dA === '買進' && dD <= 7) {
+    sigPts += 10;
+  } else if (dA === '買進' && dD > 10) {
+    sigPts -= 8; warns.push('買進已'+dD+'天（非起漲點）');
+  } else if (dA === '持有' || dA === '空手') {
+    sigPts += 0;
+  }
+
+  // 週線配合
+  if (wA === '買進' && wD <= 2) {
+    sigPts += 10; reasons.push('週線剛翻多');
+  } else if (wA === '買進') {
+    sigPts += 5;
+  } else if (wA === '持有' && wD <= 3) {
+    sigPts += 4;
+  }
+
+  // 日週雙買共振
+  if (dA === '買進' && wA === '買進') {
+    sigPts += 5; reasons.push('日週雙買共振');
+  }
+
+  score += Math.max(0, Math.min(30, sigPts));
+
+  // ── 三、量能洗盤完成（20分）— 你最重視的凹洞量 ──
+  let volPts = 0;
+
+  // 凹洞量啟動（最核心）
+  if (s.vol_hollow) { volPts += 12; reasons.push('凹洞量完成'); }
+
+  // 近3日量遞增（慢慢出量）
+  if (s.vol_3d_inc) { volPts += 6; reasons.push('量能遞增'); }
+
+  // 量比適中（1.2–2.5倍，不能爆量）
+  if (s.vol_ratio != null) {
+    if (s.vol_ratio >= 1.2 && s.vol_ratio <= 2.5) {
+      volPts += 6; reasons.push('量比'+s.vol_ratio+'倍適中');
+    } else if (s.vol_ratio > 2.5) {
+      volPts -= 5; warns.push('量比過大（疑出貨）');
+    }
+  }
+
+  // 量縮穩定（整理乾淨）
+  if (s.vol_cv10 != null && s.vol_cv10 < 0.35) {
+    volPts += 4; reasons.push('量縮整理穩定');
+  }
+
+  // 爆量長黑：出貨警訊，重扣
+  if (s.vol_ratio != null && s.vol_ratio >= 3.0 && s.prev_price && s.price) {
+    const pct = (s.price / s.prev_price - 1) * 100;
+    if (pct < 0) { volPts -= 15; warns.push('爆量長黑出貨警訊'); }
+  }
+
+  score += Math.max(-15, Math.min(20, volPts));
+
+  // ── 四、均線位置（10分）— 剛突破均線是起漲特徵 ──
+  let maPts = 0;
+
+  if (s.ma20 && s.price) {
+    const bias20 = (s.price - s.ma20) / s.ma20 * 100;
+    if (bias20 >= 0 && bias20 <= 8) {
+      maPts += 10; reasons.push('剛站上MA20');
+    } else if (bias20 > 8 && bias20 <= 20) {
+      maPts += 5;
+    } else if (bias20 > 40) {
+      maPts -= 8; warns.push('遠高於MA20');
+    } else if (bias20 < -5) {
+      maPts -= 5; warns.push('跌破MA20');
+    }
+  }
+
+  score += Math.max(-8, Math.min(10, maPts));
+
+  // ── 五、扣分機制 ──────────────────────────────
+  // 跌破MA60：趨勢結構破壞
+  if (s.ma60d && s.price < s.ma60d) {
+    score -= 10; warns.push('跌破MA60');
+  }
+
+  // RS極弱（持續落後大盤）
+  if (s.rs_20 != null && s.rs_20 < -10) {
+    score -= 8; warns.push('持續落後大盤');
+  }
+
+  // 上影線過多（假突破）
+  if ((s.long_upper_shadow_10||0) >= 4) {
+    score -= 5; warns.push('上影線偏多');
+  }
+
+  // ── 六、市場環境係數 ─────────────────────────
+  let envCoef = 1.0;
+  try {
+    if (typeof MKT !== 'undefined' && MKT) {
+      const swT = MKT['波段溫度'] || {};
+      const mktSwing = Number(swT['分數'] || 50);
+      if (mktSwing < 30)      envCoef = 0.75;
+      else if (mktSwing < 45) envCoef = 0.88;
+      else if (mktSwing > 80) envCoef = 1.05;
+    }
+  } catch(e) {}
+
+  score = Math.round(Math.max(0, Math.min(100, score)) * envCoef);
+
+  return {
+    score:   score,
+    reasons: reasons.slice(0, 4),
+    warns:   warns.slice(0, 3)
+  };
 }
 
 // ===== 個股評分系統 =====
@@ -1075,10 +1334,16 @@ function renderRanking(type) {
     (g.stocks||[]).forEach(s => {
       if (!s.daily) return;
       const sc = calcScore(s);
+      const ms = calcMomentumScore(s);
       const prev = loadPrevScores()[s.id] || {};
-      const maxSc = Math.max(sc ? sc.swing : 0, sc ? sc.short : 0);
+      // 計算此筆的主要分數（三種 Tab 都取最大值做去重依據）
+      const maxSc = Math.max(
+        sc ? sc.swing : 0,
+        sc ? sc.short : 0,
+        ms ? ms.score : 0
+      );
       if (!seenIds[s.id] || maxSc > seenIds[s.id].maxSc) {
-        seenIds[s.id] = { s, gi, sc, prev, maxSc };
+        seenIds[s.id] = { s, gi, sc, ms, prev, maxSc };
       }
     });
   });
@@ -1096,9 +1361,14 @@ function renderRanking(type) {
     emptyText = '請先掃描自選股 1–8 組';
   } else {
     // 起漲候選：四條件全通過，依 gain_60d（距低點漲幅）由低到高排，位置越低越優先
-    sorted = all.filter(x => x.ms).sort((a,b) => b.ms.score - a.ms.score).slice(0,20);
-    titleText = '🚀 主升段 前20名';
-    emptyText = '請先掃描自選股 1–8 組';
+    sorted = all
+      .filter(x => { const lf = calcLaunchFilter(x.s); return lf && lf.allPass; })
+      .sort((a,b) => (a.s.gain_60d||999) - (b.s.gain_60d||999))
+      .slice(0,20);
+    // 補上 lf 給後面渲染用
+    sorted = sorted.map(x => ({ ...x, lf: calcLaunchFilter(x.s) }));
+    titleText = '🎯 主升段起漲候選';
+    emptyText = '目前無符合全部四個起漲條件的股票（位置低＋剛買進＋量啟動＋低乖離）';
   }
 
   if (sorted.length === 0) {
@@ -1142,6 +1412,32 @@ function renderRanking(type) {
 
     // 狀態標籤（主升段用）
     let statusHtml = '';
+    if (type === 'rank_momentum' && ms && prev.momentum != null) {
+      const delta = ms.score - prev.momentum;
+      let label = '', labelColor = '#ffd60a';
+      if (ms.score >= 75 && delta >= 3)       { label = '🚀強勢起漲中'; labelColor = '#ff453a'; }
+      else if (ms.score >= 75)                 { label = '✅起漲確認';   labelColor = '#ff9f0a'; }
+      else if (prev.momentum >= 75 && ms.score >= 60 && ms.score < 75) { label = '⚠️起漲受阻'; labelColor = '#ffd60a'; }
+      else if (prev.momentum >= 75 && ms.score < 60 && s.ma20 && s.price < s.ma20) { label = '❌起漲失敗'; labelColor = '#30d158'; }
+      else if (prev.momentum >= 75 && ms.score < 60)  { label = '📉動能退潮'; labelColor = '#ffd60a'; }
+      else if (ms.score >= 45 && delta >= 3)   { label = '🔄蓄勢向上'; labelColor = '#ff9f0a'; }
+      else if (ms.score >= 45 && delta <= -3)  { label = '📉動能退潮'; labelColor = '#ffd60a'; }
+      else if (ms.score < 45)                  { label = '😶偏弱觀望'; labelColor = '#30d158'; }
+      if (label) statusHtml = `<span style="font-size:10px;color:${labelColor};margin-left:6px">${label}</span>`;
+    }
+
+    // 理由文字
+    let reasonHtml = '';
+    if (type === 'rank_swing' && sc && sc.swingReasons.length > 0) {
+      reasonHtml = `<div style="font-size:10.5px;color:#a0b4c8;margin-top:2px">${sc.swingReasons.slice(0,3).join('・')}</div>`;
+    } else if (type === 'rank_short' && sc && sc.shortReasons.length > 0) {
+      reasonHtml = `<div style="font-size:10.5px;color:#a0b4c8;margin-top:2px">${sc.shortReasons.slice(0,3).join('・')}</div>`;
+    } else if (type === 'rank_momentum' && ms) {
+      const r = ms.reasons.slice(0,3).join('・');
+      const w = ms.warns.slice(0,2).join('・');
+      if (r) reasonHtml += `<div style="font-size:10.5px;color:#a0b4c8;margin-top:2px">✓ ${r}</div>`;
+      if (w) reasonHtml += `<div style="font-size:10.5px;color:#ff453a;margin-top:1px">⚠ ${w}</div>`;
+    }
 
     const rankColor = rank === 0 ? '#ffd60a' : rank <= 2 ? '#ff9f0a' : '#7aa8d0';
     const grpName = groups[gi].name;
@@ -1173,7 +1469,12 @@ function renderRanking(type) {
         ${s.price ? `<span style="font-size:13px;font-weight:700;color:#ffd60a">${s.price}</span>` : ''}
       </div>
       ${reasonHtml}
-
+      ${(()=>{
+        const lf = calcLaunchFilter(s);
+        if (!lf || type !== 'rank_momentum') return '';
+        return '<div style="margin-top:4px;font-size:10.5px;color:#ff453a">🎯 '+lf.passed.join('・')+'</div>';
+      })()}
+      ${posRiskHtml(s)}
     </div>`;
   });
 
@@ -1258,6 +1559,7 @@ function render(){
   if(cur === 12){ renderSpecial('change');        return; }
   if(cur === 13){ renderRanking('rank_swing');    return; }
   if(cur === 14){ renderRanking('rank_short');    return; }
+  if(cur === 15){ renderRanking('rank_momentum'); return; }
   if(cur === 16){ renderSpecial('near5');         return; }
   if(cur === 17){ renderSpecial('near20');        return; }
   if(cur === 18){ renderSpecial('near60');        return; }
@@ -1344,17 +1646,36 @@ function rc(s,gi,si,readonly=false){
     ${(()=>{
       const sc=calcScore(s);
       if(!sc) return '';
-      const prevSc=loadPrevScores()[s.id]||{};
-      let swDelta='',shDelta='',totDelta='';
-      if(prevSc.swing!=null){const d=sc.swing-prevSc.swing;if(Math.abs(d)>=1){const c=d>0?'#ff453a':'#30d158';swDelta=`<span style="font-size:10px;color:${c};margin-left:3px">${d>0?'▲':'▼'}${Math.abs(d)}</span>`;}}
-      if(prevSc.short!=null){const d=sc.short-prevSc.short;if(Math.abs(d)>=1){const c=d>0?'#ff453a':'#30d158';shDelta=`<span style="font-size:10px;color:${c};margin-left:3px">${d>0?'▲':'▼'}${Math.abs(d)}</span>`;}}
-      if(prevSc.swing!=null&&prevSc.short!=null){const prevTot=Math.round(prevSc.swing*.6+prevSc.short*.4);const d=Math.round(sc.swing*.6+sc.short*.4)-prevTot;if(Math.abs(d)>=1){const c=d>0?'#ff453a':'#30d158';totDelta=`<span style="font-size:10px;color:${c};margin-left:4px">${d>0?'▲':'▼'}${Math.abs(d)}</span>`;}}
-      const tot=Math.round(sc.swing*.6+sc.short*.4);
-      const swColor=sc.swing>=75?'#ff453a':sc.swing>=45?'#ffd60a':'#30d158';
-      const shColor=sc.short>=75?'#ff453a':sc.short>=45?'#ffd60a':'#30d158';
-      const bar=function(v,color){const w=Math.round(v);return '<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:7px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden"><div style="width:'+w+'%;height:100%;background:'+color+';border-radius:4px"></div></div><span style="width:26px;text-align:right;color:'+color+';font-weight:800;font-size:12px">'+w+'</span></div>';};
+      const bar=function(v,color){
+        const w=Math.round(v);
+        return '<div style="display:flex;align-items:center;gap:6px">'
+          +'<div style="flex:1;height:7px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden">'
+          +'<div style="width:'+w+'%;height:100%;background:'+color+';border-radius:4px"></div>'
+          +'</div>'
+          +'<span style="width:26px;text-align:right;color:'+color+';font-weight:800;font-size:12px">'+w+'</span>'
+          +'</div>';
+      };
+      const swColor=sc.swing>=75?'#ff453a':sc.swing>=45?'#ffd60a':'#30d158';  // 台股：高分=紅、低分=綠=差
+      const shColor=sc.short>=75?'#ff453a':sc.short>=45?'#ffd60a':'#30d158';  // 台股：高分=紅、低分=綠=差
       const swR=sc.swingReasons.slice(0,3).join('・');
       const shR=sc.shortReasons.slice(0,3).join('・');
+      const tot=Math.round(sc.swing*.6+sc.short*.4);
+      const prevSc = loadPrevScores()[s.id] || {};
+      // 波段變化
+      let swDelta='', shDelta='', totDelta='';
+      if (prevSc.swing != null) {
+        const d=sc.swing-prevSc.swing;
+        if(Math.abs(d)>=1){ const c=d>0?'#ff453a':'#30d158'; swDelta=`<span style="font-size:10px;color:${c};margin-left:3px">${d>0?'▲':'▼'}${Math.abs(d)}</span>`; }
+      }
+      if (prevSc.short != null) {
+        const d=sc.short-prevSc.short;
+        if(Math.abs(d)>=1){ const c=d>0?'#ff453a':'#30d158'; shDelta=`<span style="font-size:10px;color:${c};margin-left:3px">${d>0?'▲':'▼'}${Math.abs(d)}</span>`; }
+      }
+      if (prevSc.swing != null && prevSc.short != null) {
+        const prevTot=Math.round(prevSc.swing*.6+prevSc.short*.4);
+        const d=tot-prevTot;
+        if(Math.abs(d)>=1){ const c=d>0?'#ff453a':'#30d158'; totDelta=`<span style="font-size:10px;color:${c};margin-left:4px">${d>0?'▲':'▼'}${Math.abs(d)}</span>`; }
+      }
       let html='<div style="margin-top:6px;padding:7px 8px;background:rgba(56,189,248,.07);border-radius:7px;border:1px solid rgba(56,189,248,.15)">';
       html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">';
       html+='<span style="font-size:11px;color:#38bdf8;font-weight:700">▪ 個股評分</span>';
@@ -1369,6 +1690,72 @@ function rc(s,gi,si,readonly=false){
       html+='</div>';
       return html;
     })()}
+    ${(()=>{
+      const ms=calcMomentumScore(s);
+      if(!ms) return '';
+      const sc=ms.score;
+      const barColor=sc>=75?'#ff453a':sc>=50?'#ffd60a':'#30d158';  // 台股：高分=紅、低分=綠=差
+      // 昨日主升段分 & 狀態判斷
+      const prevMs = loadPrevScores()[s.id] || {};
+      const prevMsc = prevMs.momentum;
+      let msDelta='', msStatus='', msStatusColor='#ffd60a';
+      if (prevMsc != null) {
+        const d = sc - prevMsc;
+        if (Math.abs(d)>=1){ const c=d>0?'#ff453a':'#30d158'; msDelta=`<span style="font-size:10px;color:${c};margin-left:4px">${d>0?'▲':'▼'}${Math.abs(d)}</span>`; }
+        // 狀態標籤
+        if      (sc>=75 && d>=3)                                          { msStatus='🚀強勢起漲中'; msStatusColor='#ff453a'; }
+        else if (sc>=75 && d>-5)                                          { msStatus='✅起漲確認';  msStatusColor='#ff9f0a'; }
+        else if (prevMsc>=75 && sc>=60 && sc<75)                          { msStatus='⚠️起漲受阻';  msStatusColor='#ffd60a'; }
+        else if (prevMsc>=75 && sc<60 && s.ma20 && s.price<s.ma20)       { msStatus='❌起漲失敗';  msStatusColor='#30d158'; }
+        else if (prevMsc>=75 && sc<60)                                     { msStatus='📉動能退潮';  msStatusColor='#ffd60a'; }
+        else if (sc>=45 && d>=3)                                           { msStatus='🔄蓄勢向上';  msStatusColor='#ff9f0a'; }
+        else if (sc>=45 && d<=-5)                                          { msStatus='📉動能退潮';  msStatusColor='#ffd60a'; }
+        else if (sc<45)                                                    { msStatus='😶偏弱觀望';  msStatusColor='#30d158'; }
+      } else {
+        // 第一次掃描，沒有昨日資料
+        if      (sc>=75) { msStatus='🚀強勢啟動';  msStatusColor='#ff453a'; }
+        else if (sc>=60) { msStatus='✅蓄勢向上';  msStatusColor='#ff9f0a'; }
+        else if (sc>=45) { msStatus='🔄觀察中';    msStatusColor='#ffd60a'; }
+        else             { msStatus='😶偏弱觀望';  msStatusColor='#30d158'; }
+      }
+      let html='<div style="margin-top:5px;padding:7px 8px;background:rgba(255,159,10,.07);border-radius:7px;border:1px solid rgba(255,159,10,.2)">';
+      html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">';
+      html+='<span style="font-size:11px;color:#ff9f0a;font-weight:700">🚀 主升段起漲分</span>';
+      html+='<span style="font-size:12px;font-weight:800;color:'+barColor+'">'+sc+msDelta+' <span style="font-size:10px;color:'+msStatusColor+'">'+msStatus+'</span></span>';
+      html+='</div>';
+      html+='<div style="height:7px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden;margin-bottom:5px">';
+      html+='<div style="width:'+sc+'%;height:100%;background:'+barColor+';border-radius:4px;transition:width .4s"></div>';
+      html+='</div>';
+      if(ms.reasons.length>0) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.7">✓ '+ms.reasons.join('・')+'</div>';
+      if(ms.warns.length>0)   html+='<div style="font-size:10.5px;color:#ff453a;line-height:1.7;margin-top:1px">⚠ '+ms.warns.join('・')+'</div>';
+      html+='</div>';
+      return html;
+    })()}
+    ${(()=>{
+      const lf = calcLaunchFilter(s);
+      if (!lf) return '';
+      const icons = ['①','②','③','④'];
+      const labels = ['低位','剛買','量啟','低乖'];
+      const condLabels = ['①位置','②剛買','③量啟','④低乖'];
+      let dotHtml = condLabels.map((lbl,i)=>{
+        const ok = lf.checks[i];
+        const detail = ok
+          ? (lf.passed[lf.checks.slice(0,i).filter(Boolean).length] || '')
+          : (lf.failed[lf.checks.slice(0,i).filter(v=>!v).length]  || '');
+        return '<span style="font-size:10.5px;padding:2px 7px;border-radius:4px;margin-right:3px;margin-bottom:2px;display:inline-block;background:'+(ok?'rgba(255,69,58,.18)':'rgba(255,255,255,.05)')+';color:'+(ok?'#ff453a':'#666e7a')+'">'+lbl+(ok?'✓':'✗')+(detail?' '+detail:'')+'</span>';
+      }).join('');
+      const allColor = lf.allPass ? '#ff453a' : lf.passCount>=3 ? '#ff9f0a' : '#556a80';
+      const allLabel = lf.allPass ? '🎯 起漲候選' : lf.passCount>=3 ? '⚬ 接近條件' : '';
+      return '<div style="margin-top:4px;padding:5px 8px;background:rgba(255,255,255,.03);border-radius:6px;border:1px solid rgba(255,255,255,.08)">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">'
+        +'<span style="font-size:10.5px;color:#7aa8d0">起漲條件篩選 '+lf.passCount+'/4</span>'
+        +(allLabel?'<span style="font-size:10.5px;color:'+allColor+';font-weight:700">'+allLabel+'</span>':'')
+        +'</div>'
+        +dotHtml
+        +(lf.allPass?'<div style="font-size:10px;color:#a0b4c8;margin-top:3px">✓ '+lf.passed.join('・')+'</div>':'')
+        +'</div>';
+    })()}
+    ${posRiskHtml(s)}
   </div>`;
 }
 
@@ -1387,11 +1774,14 @@ function del(gi,si){ groups[gi].stocks.splice(si,1); sgr(); render(); }
 
 async function scan(gi){
   const stocks=groups[gi].stocks;
-  if(!stocks||stocks.length===0){ return; }
+  if(!stocks||stocks.length===0){alert('請先新增股票');return;}
+  // 掃描前先備份當前訊號
   savePreScanSigs();
   const btn=document.getElementById('scanBtn');
-  if(btn){ btn.disabled=true; btn.textContent='查詢中…'; }
+  btn.disabled=true; btn.textContent='查詢中…';
 
+  // 顯示 loading
+  const tbl=document.getElementById('main');
   const ids=stocks.map(s=>s.id).join(',');
   try{
     const res=await fetch('/api/batch?ids='+encodeURIComponent(ids),{signal:AbortSignal.timeout(60000)});
@@ -1407,6 +1797,7 @@ async function scan(gi){
         s.near_ma20=r.near_ma20; s.near_ma60d=r.near_ma60d; s.near_ma60=r.near_ma60;
         s.daily=r.daily; s.weekly=r.weekly; s.yesterday=r.yesterday; s.new_high_10=r.new_high_10;
         s.name=r.name||'';
+        // 主升段啟動分欄位
         s.vol_today=r.vol_today; s.vol_ma5v=r.vol_ma5v; s.vol_ma20v=r.vol_ma20v;
         s.vol_ratio=r.vol_ratio; s.vol_cv10=r.vol_cv10;
         s.vol_3d_inc=r.vol_3d_inc; s.vol_5d_slope_up=r.vol_5d_slope_up;
@@ -1434,23 +1825,24 @@ async function scan(gi){
     groups[gi].stocks = sortBySignal(groups[gi].stocks);
     groups[gi].lastUpdate='更新：'+ts(); sgr(); saveSigs(); saveScores();
   }catch(e){
-    if(btn){ btn.textContent='✗ 查詢失敗';
-      setTimeout(()=>{ if(btn){ btn.disabled=false; btn.textContent='⚡ 掃描'; }},3000);
-    }
+    btn.textContent='✗ 查詢失敗';
+    setTimeout(()=>{btn.textContent='⚡ 掃描';},3000);
   }
-  if(btn){ btn.disabled=false; btn.textContent='⚡ 掃描'; }
+  btn.disabled=false; btn.textContent='⚡ 掃描';
   render();
 }
 
 async function autoScan(){
   for(let i=0;i<8;i++){
     if(groups[i].stocks&&groups[i].stocks.length>0){
-      cur=i; render();
-      try{ await scan(i); }catch(e){}
+      cur=i; render(); await scan(i);
     }
   }
-  const first=groups.findIndex(g=>g.stocks&&g.stocks.length>0);
-  cur=first>=0?first:0;
+  // 掃描完後，如果在特殊群組頁則重新渲染
+  if(cur<8) {
+    cur=groups.findIndex(g=>g.stocks&&g.stocks.length>0);
+    if(cur<0) cur=0;
+  }
   render();
 }
 
@@ -1477,10 +1869,10 @@ async function loadCloud(){
   const btn=document.getElementById('btnLoad');
   btn.textContent='載入中…'; btn.disabled=true;
   try{
-    const res=await fetch('/api/sync-load',{signal:AbortSignal.timeout(45000)});
+    const res=await fetch('/api/sync-load',{signal:AbortSignal.timeout(20000)});
     const j=await res.json();
     const rows=j.data||[];
-    if(rows.length===0){btn.textContent='⬇ 載雲端';btn.disabled=false;cur=0;setTimeout(()=>autoScan(),2000);return;}
+    if(rows.length===0){alert('雲端無資料');btn.textContent='⬇ 載雲端';btn.disabled=false;return;}
     const ng=DN.map((n,i)=>({name:n,stocks:[]}));
     rows.forEach(row=>{
       const gi=parseInt(row[0]);
@@ -1493,14 +1885,13 @@ async function loadCloud(){
     groups=ng; sgr(); 
     // 強制清掉舊版 key，避免下次讀到過期資料
     localStorage.removeItem('ga_g_v4');
-    cur=0; render();
+    render();
     btn.textContent='✓ 已載入';
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},1500);
-    setTimeout(()=>autoScan(),2000);
+    setTimeout(()=>autoScan(),10000);
   }catch(e){
     btn.textContent='✗ '+(e.message||'失敗'); btn.disabled=false;
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},3000);
-    cur=0; setTimeout(()=>autoScan(),2000);
   }
 }
 

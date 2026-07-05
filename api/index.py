@@ -913,9 +913,9 @@ function calcLaunchFilter(s) {
 }
 
 // ===== 主升段起漲分（Stage 2 Launch Score）=====
-// 核心目的：找出正要從整理區啟動主升段的股票（買在起漲點）
-// 架構：位置判斷40 + 訊號時機30 + 量能洗盤20 + 均線位置10
-// 漲太多直接重扣，越接近底部越高分
+// 邏輯：第一關確認主升段（必要條件，不過=0分）
+//       第二關判斷起漲時機（離起漲越近分越高）
+//       第三關量能加分修正
 function calcMomentumScore(s) {
   if (!s || !s.daily) return null;
   const d  = s.daily  || {};
@@ -925,140 +925,78 @@ function calcMomentumScore(s) {
   const wD = w.days   || 0;
   const dD = d.days   || 0;
 
-  let score = 0;
   const reasons = [];
   const warns   = [];
 
-  // ── 一、位置判斷（40分）— 最重要，漲太多直接低分 ──
-  let posPts = 0;
+  // ══ 第一關：主升段確認（三個必要條件，缺一=0分）══
+  // 條件A：週線在多方（持有或買進）
+  const condA = (wA === '持有' || wA === '買進');
+  // 條件B：均線多頭排列（MA5 > MA20 > MA60）
+  const condB = !!(s.ma5 && s.ma20 && s.ma60d &&
+                   s.ma5 > s.ma20 && s.ma20 > s.ma60d);
+  // 條件C：日線不能是賣出或空手
+  const condC = (dA === '買進' || dA === '持有');
 
-  // 距60日低點漲幅（核心指標）
-  if (s.gain_60d != null) {
-    if      (s.gain_60d <= 10)  { posPts += 25; reasons.push('距60日低僅+'+s.gain_60d+'%'); }
-    else if (s.gain_60d <= 20)  { posPts += 20; reasons.push('距60日低+'+s.gain_60d+'%'); }
-    else if (s.gain_60d <= 35)  { posPts += 12; }
-    else if (s.gain_60d <= 50)  { posPts += 4;  warns.push('距低點+'+s.gain_60d+'%偏高'); }
-    else if (s.gain_60d <= 80)  { posPts -= 10; warns.push('距低點+'+s.gain_60d+'%已高'); }
-    else                        { posPts -= 20; warns.push('距低點+'+s.gain_60d+'%過熱'); }
+  if (!condA) { warns.push('週線未在多方'); }
+  if (!condB) { warns.push('均線未多頭排列'); }
+  if (!condC) { warns.push('日線非買進持有'); }
+
+  // 三關必須全過，否則直接0分
+  if (!condA || !condB || !condC) {
+    return { score: 0, reasons: [], warns: warns };
   }
 
-  // 距52週低點漲幅（長線位置）
-  if (s.gain_52w != null) {
-    if      (s.gain_52w <= 30)  { posPts += 15; reasons.push('52週低位+'+s.gain_52w+'%'); }
-    else if (s.gain_52w <= 60)  { posPts += 8;  }
-    else if (s.gain_52w <= 120) { posPts += 2;  }
-    else if (s.gain_52w <= 200) { posPts -= 8;  warns.push('52週漲幅+'+s.gain_52w+'%'); }
-    else                        { posPts -= 20; warns.push('52週大漲+'+s.gain_52w+'%追高風險'); }
-  }
+  // 主升段確認，記錄理由
+  reasons.push('週線'+(wA==='買進'?'買進':'持有'+wD+'週'));
+  reasons.push('均線多排');
 
-  score += Math.max(-20, Math.min(40, posPts));
-
-  // ── 二、訊號時機（30分）— 剛翻買進才是起漲點 ──
-  let sigPts = 0;
-
-  // 日線剛翻買進（最強訊號）
+  // ══ 第二關：起漲時機（基礎分 0–80）══
+  let score = 0;
   const ydA = (s.yesterday && s.yesterday.action) || '';
-  if (dA === '買進' && (ydA === '空手' || ydA === '賣出' || ydA === '')) {
-    sigPts += 25; reasons.push('日線剛翻買進');
-  } else if (dA === '買進' && dD <= 3) {
-    sigPts += 18; reasons.push('買進僅'+dD+'天');
-  } else if (dA === '買進' && dD <= 7) {
-    sigPts += 10;
-  } else if (dA === '買進' && dD > 10) {
-    sigPts -= 8; warns.push('買進已'+dD+'天（非起漲點）');
-  } else if (dA === '持有' || dA === '空手') {
-    sigPts += 0;
-  }
 
-  // 週線配合
-  if (wA === '買進' && wD <= 2) {
-    sigPts += 10; reasons.push('週線剛翻多');
-  } else if (wA === '買進') {
-    sigPts += 5;
-  } else if (wA === '持有' && wD <= 3) {
-    sigPts += 4;
-  }
-
-  // 日週雙買共振
-  if (dA === '買進' && wA === '買進') {
-    sigPts += 5; reasons.push('日週雙買共振');
-  }
-
-  score += Math.max(0, Math.min(30, sigPts));
-
-  // ── 三、量能洗盤完成（20分）— 你最重視的凹洞量 ──
-  let volPts = 0;
-
-  // 凹洞量啟動（最核心）
-  if (s.vol_hollow) { volPts += 12; reasons.push('凹洞量完成'); }
-
-  // 近3日量遞增（慢慢出量）
-  if (s.vol_3d_inc) { volPts += 6; reasons.push('量能遞增'); }
-
-  // 量比適中（1.2–2.5倍，不能爆量）
-  if (s.vol_ratio != null) {
-    if (s.vol_ratio >= 1.2 && s.vol_ratio <= 2.5) {
-      volPts += 6; reasons.push('量比'+s.vol_ratio+'倍適中');
-    } else if (s.vol_ratio > 2.5) {
-      volPts -= 5; warns.push('量比過大（疑出貨）');
+  if (dA === '買進') {
+    if (ydA === '空手' || ydA === '賣出' || ydA === '') {
+      // 今天剛翻買進：最接近起漲點
+      score = 90; reasons.push('今日剛翻買進');
+    } else if (dD <= 2) {
+      score = 82; reasons.push('買進第'+dD+'天');
+    } else if (dD <= 5) {
+      score = 70; reasons.push('買進第'+dD+'天');
+    } else if (dD <= 10) {
+      score = 55; reasons.push('買進第'+dD+'天');
+    } else {
+      // 買進超過10天：主升段中但非起漲點
+      score = 35; reasons.push('買進已'+dD+'天');
     }
+  } else if (dA === '持有') {
+    // 持有中：主升段確認但不是買進起漲點
+    if (dD <= 3)       { score = 25; reasons.push('持有'+dD+'天'); }
+    else if (dD <= 10) { score = 18; reasons.push('持有'+dD+'天'); }
+    else               { score = 10; reasons.push('持有'+dD+'天'); }
   }
 
-  // 量縮穩定（整理乾淨）
-  if (s.vol_cv10 != null && s.vol_cv10 < 0.35) {
-    volPts += 4; reasons.push('量縮整理穩定');
+  // ══ 第三關：量能加分（最多+15）══
+  if (s.vol_hollow)    { score += 10; reasons.push('凹洞量完成'); }
+  if (s.vol_3d_inc)    { score += 5;  reasons.push('量能遞增'); }
+  if (s.rs_20 != null && s.rs_20 >= 5) {
+    score += 5; reasons.push('RS跑贏+'+s.rs_20+'%');
   }
 
-  // 爆量長黑：出貨警訊，重扣
-  if (s.vol_ratio != null && s.vol_ratio >= 3.0 && s.prev_price && s.price) {
-    const pct = (s.price / s.prev_price - 1) * 100;
-    if (pct < 0) { volPts -= 15; warns.push('爆量長黑出貨警訊'); }
+  // 位置過熱：只顯示警告，不扣分（位置由位置風險欄位處理）
+  if (s.gain_60d != null && s.gain_60d > 80) {
+    warns.push('距低點+'+s.gain_60d+'%注意追高');
+  }
+  if (s.ma60_bias != null && s.ma60_bias > 60) {
+    warns.push('MA60乖離+'+s.ma60_bias+'%過熱');
   }
 
-  score += Math.max(-15, Math.min(20, volPts));
-
-  // ── 四、均線位置（10分）— 剛突破均線是起漲特徵 ──
-  let maPts = 0;
-
-  if (s.ma20 && s.price) {
-    const bias20 = (s.price - s.ma20) / s.ma20 * 100;
-    if (bias20 >= 0 && bias20 <= 8) {
-      maPts += 10; reasons.push('剛站上MA20');
-    } else if (bias20 > 8 && bias20 <= 20) {
-      maPts += 5;
-    } else if (bias20 > 40) {
-      maPts -= 8; warns.push('遠高於MA20');
-    } else if (bias20 < -5) {
-      maPts -= 5; warns.push('跌破MA20');
-    }
-  }
-
-  score += Math.max(-8, Math.min(10, maPts));
-
-  // ── 五、扣分機制 ──────────────────────────────
-  // 跌破MA60：趨勢結構破壞
-  if (s.ma60d && s.price < s.ma60d) {
-    score -= 10; warns.push('跌破MA60');
-  }
-
-  // RS極弱（持續落後大盤）
-  if (s.rs_20 != null && s.rs_20 < -10) {
-    score -= 8; warns.push('持續落後大盤');
-  }
-
-  // 上影線過多（假突破）
-  if ((s.long_upper_shadow_10||0) >= 4) {
-    score -= 5; warns.push('上影線偏多');
-  }
-
-  // ── 六、市場環境係數 ─────────────────────────
+  // 大盤環境係數
   let envCoef = 1.0;
   try {
     if (typeof MKT !== 'undefined' && MKT) {
-      const swT = MKT['波段溫度'] || {};
-      const mktSwing = Number(swT['分數'] || 50);
-      if (mktSwing < 30)      envCoef = 0.75;
-      else if (mktSwing < 45) envCoef = 0.88;
+      const mktSwing = Number((MKT['波段溫度']||{})['分數'] || 50);
+      if      (mktSwing < 30) envCoef = 0.8;
+      else if (mktSwing < 45) envCoef = 0.9;
       else if (mktSwing > 80) envCoef = 1.05;
     }
   } catch(e) {}

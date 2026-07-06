@@ -53,23 +53,80 @@ def calc_signal(close_series):
         hold_days = 0
 
     return signal, action, hold_days
+_TICKER_CACHE = {}  # 代號 → 完整 ticker 快取（避免重複試探下載）
+
 def resolve_ticker(stock_id):
     if stock_id.endswith(".TW") or stock_id.endswith(".TWO"):
         return stock_id
+    if stock_id in _TICKER_CACHE:
+        return _TICKER_CACHE[stock_id]
+    # 優先用 twstock 判斷上市/上櫃（零下載、最快）
+    try:
+        if twstock and stock_id in twstock.codes:
+            mkt = getattr(twstock.codes[stock_id], 'market', '')
+            if '上櫃' in mkt:
+                t = stock_id + ".TWO"
+            else:
+                t = stock_id + ".TW"
+            _TICKER_CACHE[stock_id] = t
+            return t
+    except:
+        pass
+    # twstock 查不到才退回試探下載
     t = stock_id + ".TW"
     try:
         df = yf.download(t, period="5d", auto_adjust=True, progress=False)
         if not df.empty and len(df) >= 1:
+            _TICKER_CACHE[stock_id] = t
             return t
     except:
         pass
-    return stock_id + ".TWO"
+    t = stock_id + ".TWO"
+    _TICKER_CACHE[stock_id] = t
+    return t
+
+
+# ── 大盤 ^TWII 快取（10分鐘內共用，不必每支股票重抓）──
+import time as _time
+_TWII_CACHE = {'ts': 0, 'close': None}
+
+def get_twii_close():
+    now = _time.time()
+    if _TWII_CACHE['close'] is not None and now - _TWII_CACHE['ts'] < 600:
+        return _TWII_CACHE['close']
+    try:
+        df_tw = yf.download('^TWII', period='60d', auto_adjust=True, progress=False)
+        if not df_tw.empty:
+            if isinstance(df_tw.columns, pd.MultiIndex):
+                tw_c = df_tw['Close'].iloc[:, 0].dropna()
+            else:
+                tw_c = df_tw['Close'].dropna()
+            _TWII_CACHE['close'] = tw_c
+            _TWII_CACHE['ts'] = now
+            return tw_c
+    except:
+        pass
+    return _TWII_CACHE['close']
+
+
+# ── JSON NaN 防呆：NaN/Inf 一律轉 None，避免前端「格式不對」──
+import math as _math
+
+def _clean(obj):
+    if isinstance(obj, dict):
+        return {k: _clean(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_clean(v) for v in obj]
+    if isinstance(obj, float) and (_math.isnan(obj) or _math.isinf(obj)):
+        return None
+    return obj
 
 
 def get_signals(stock_id):
     try:
         ticker = resolve_ticker(stock_id)
-        df_d = yf.download(ticker, period="60d", auto_adjust=True, progress=False)
+        # 一次下載一年日線：日線訊號與52週新高共用，減少下載次數
+        df_d = yf.download(ticker, period="1y", auto_adjust=True, progress=False)
         if df_d.empty or len(df_d) < 5:
             return None
         if isinstance(df_d.columns, pd.MultiIndex):
@@ -220,17 +277,12 @@ def get_signals(stock_id):
                 # 今日沒有爆量（量比 < 2.0）
                 vol_no_spike = (vol_ratio is not None and vol_ratio < 2.0)
 
-            # 52週新高（抓1年資料）
+            # 52週新高（直接用已下載的一年日線，不再重複下載）
             try:
-                df_1y = yf.download(ticker, period='1y', auto_adjust=True, progress=False)
-                if not df_1y.empty:
-                    if isinstance(df_1y.columns, pd.MultiIndex):
-                        c1y = df_1y['Close'].iloc[:, 0].dropna()
-                    else:
-                        c1y = df_1y['Close'].dropna()
-                    if len(c1y) >= 2:
-                        high_52w = round(float(c1y.max()), 2)
-                        new_high_52w = float(price) >= float(c1y.iloc[:-1].max())
+                c1y = close_d
+                if len(c1y) >= 2:
+                    high_52w = round(float(c1y.max()), 2)
+                    new_high_52w = float(price) >= float(c1y.iloc[:-1].max())
             except:
                 pass
 
@@ -262,18 +314,13 @@ def get_signals(stock_id):
             if len(close_d) >= 40:
                 ma20_slope = round((float(close_d.iloc[-20:].mean()) - float(close_d.iloc[-40:-20].mean())) / float(close_d.iloc[-40:-20].mean()) * 100, 3)
 
-            # RS 近20日相對強度（抓大盤 ^TWII）
+            # RS 近20日相對強度（用快取的大盤資料，10分鐘內全部股票共用）
             try:
-                df_tw = yf.download('^TWII', period='60d', auto_adjust=True, progress=False)
-                if not df_tw.empty:
-                    if isinstance(df_tw.columns, pd.MultiIndex):
-                        tw_c = df_tw['Close'].iloc[:, 0].dropna()
-                    else:
-                        tw_c = df_tw['Close'].dropna()
-                    if len(tw_c) >= 20 and len(close_d) >= 20:
-                        stock_ret = (float(close_d.iloc[-1]) / float(close_d.iloc[-20]) - 1) * 100
-                        mkt_ret   = (float(tw_c.iloc[-1])   / float(tw_c.iloc[-20])   - 1) * 100
-                        rs_20 = round(stock_ret - mkt_ret, 2)
+                tw_c = get_twii_close()
+                if tw_c is not None and len(tw_c) >= 20 and len(close_d) >= 20:
+                    stock_ret = (float(close_d.iloc[-1]) / float(close_d.iloc[-20]) - 1) * 100
+                    mkt_ret   = (float(tw_c.iloc[-1])   / float(tw_c.iloc[-20])   - 1) * 100
+                    rs_20 = round(stock_ret - mkt_ret, 2)
             except:
                 pass
 
@@ -324,6 +371,12 @@ def get_signals(stock_id):
         return None
 
 
+@app.route('/api/ping', methods=['GET'])
+def ping():
+    # 輕量喚醒端點：前端自動掃描前先叫醒 Render 免費機器
+    return jsonify({'ok': True})
+
+
 @app.route('/api/check', methods=['GET'])
 def check_stock():
     stock_id = request.args.get('id', '').strip().upper()
@@ -332,7 +385,7 @@ def check_stock():
     result = get_signals(stock_id)
     if result is None:
         return jsonify({'error': '查無資料'}), 404
-    return jsonify(result)
+    return jsonify(_clean(result))
 
 
 @app.route('/api/batch', methods=['GET'])
@@ -342,14 +395,21 @@ def batch_check():
         return jsonify({'error': '請輸入股票代號'}), 400
     ids = [x.strip() for x in ids_raw.split(',') if x.strip()]
     result = {}
-    for sid in ids:
-        try:
-            data = get_signals(sid)
-            if data:
-                result[sid] = data
-        except Exception:
-            pass  # 單支股票失敗，略過繼續查下一支
-    return jsonify(result)
+    # 先確保大盤快取就緒（只下載一次，全部股票共用）
+    get_twii_close()
+    # 多執行緒並行查詢（一次最多4支同時），大幅縮短時間、避開 30 秒逾時
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futs = {ex.submit(get_signals, sid): sid for sid in ids}
+        for fut in as_completed(futs):
+            sid = futs[fut]
+            try:
+                data = fut.result()
+                if data:
+                    result[sid] = data
+            except Exception:
+                pass  # 單支股票失敗，略過繼續查下一支
+    return jsonify(_clean(result))
 
 
 import requests as http_requests
@@ -1402,19 +1462,29 @@ function del(gi,si){ groups[gi].stocks.splice(si,1); sgr(); render(); }
 
 async function scan(gi){
   const stocks=groups[gi].stocks;
-  if(!stocks||stocks.length===0){alert('請先新增股票');return;}
+  if(!stocks||stocks.length===0){alert('請先新增股票');return false;}
   // 掃描前先備份當前訊號
   savePreScanSigs();
   const btn=document.getElementById('scanBtn');
-  btn.disabled=true; btn.textContent='查詢中…';
+  const setBtn=(t,d)=>{if(btn){btn.textContent=t;btn.disabled=d;}};
+  setBtn('查詢中…',true);
 
   // 顯示 loading
   const tbl=document.getElementById('main');
-  const ids=stocks.map(s=>s.id).join(',');
   try{
-    const res=await fetch('/api/batch?ids='+encodeURIComponent(ids),{signal:AbortSignal.timeout(60000)});
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const data=await res.json();
+    // ── 分批查詢：每5支一批，單批不會超過伺服器30秒限制，避免502 ──
+    const allIds=stocks.map(s=>s.id);
+    const CHUNK=5;
+    const data={};
+    const totalChunks=Math.ceil(allIds.length/CHUNK);
+    for(let c=0;c<totalChunks;c++){
+      const part=allIds.slice(c*CHUNK,(c+1)*CHUNK).join(',');
+      setBtn('查詢中 '+(c+1)+'/'+totalChunks+'…',true);
+      const res=await fetch('/api/batch?ids='+encodeURIComponent(part),{signal:AbortSignal.timeout(45000)});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const j=await res.json();
+      Object.assign(data,j);
+    }
     const hs=[];
     stocks.forEach(s=>{
       const r=data[s.id];
@@ -1450,17 +1520,40 @@ async function scan(gi){
     groups[gi].stocks = sortBySignal(groups[gi].stocks);
     groups[gi].lastUpdate='更新：'+ts(); sgr(); saveSigs();
   }catch(e){
-    btn.textContent='✗ 查詢失敗';
-    setTimeout(()=>{btn.textContent='⚡ 掃描';},3000);
+    setBtn('✗ 查詢失敗',true);
+    setTimeout(()=>{setBtn('⚡ 掃描',false);},3000);
+    render();
+    return false;
   }
-  btn.disabled=false; btn.textContent='⚡ 掃描';
+  setBtn('⚡ 掃描',false);
   render();
+  return true;
+}
+
+// ── 喚醒後端：Render 免費機器睡眠時，先 ping 到醒為止再開掃 ──
+async function wakeServer(){
+  for(let i=0;i<5;i++){
+    try{
+      const r=await fetch('/api/ping',{signal:AbortSignal.timeout(30000)});
+      if(r.ok) return true;
+    }catch(e){}
+    await new Promise(rs=>setTimeout(rs,5000));
+  }
+  return false;
 }
 
 async function autoScan(){
+  await wakeServer();  // 先確保伺服器醒著，第一組（持股）才不會白白失敗
   for(let i=0;i<8;i++){
     if(groups[i].stocks&&groups[i].stocks.length>0){
-      cur=i; render(); await scan(i);
+      cur=i; render();
+      let ok=false;
+      try{ ok=await scan(i); }catch(e){ ok=false; }
+      if(!ok){
+        // 失敗自動重試一次（等3秒讓伺服器喘口氣），不再默默跳過
+        await new Promise(rs=>setTimeout(rs,3000));
+        try{ await scan(i); }catch(e){}
+      }
     }
   }
   // 掃描完後，如果在特殊群組頁則重新渲染

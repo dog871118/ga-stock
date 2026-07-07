@@ -209,7 +209,7 @@ def get_signals(stock_id):
                 return abs(p - ma) / ma <= 0.03
             return False
 
-        # ── 量能欄位（主升段啟動分用）──
+        # ── 量能欄位（主升段累積分用）──
         vol_today = None; vol_ma5v = None; vol_ma20v = None
         vol_ratio = None; vol_cv10 = None
         vol_3d_inc = False; vol_5d_slope_up = False
@@ -346,7 +346,7 @@ def get_signals(stock_id):
             'yesterday':  {'signal': y_signal, 'action': y_action},
             'new_high_10': new_high_10,
             'weekly':     {'signal': w_signal, 'action': w_action, 'days': w_days},
-            # 主升段啟動分所需欄位
+            # 主升段累積分所需欄位
             'vol_today':        vol_today,
             'vol_ma5v':         round(vol_ma5v) if vol_ma5v else None,
             'vol_ma20v':        round(vol_ma20v) if vol_ma20v else None,
@@ -831,7 +831,7 @@ function sigOrder(action) {
   return action==='買進'?0: action==='持有'?1: action==='賣出'?2: 3;
 }
 
-// ===== 主升段啟動分（Stage 2 Launch Score）=====
+// ===== 主升段累積分（Stage 2 Launch Score）=====
 // 架構：量能品質30 + 趨勢強度25 + 價格動能20 + 週期共振15 + 相對強度RS10
 // 最後套用健康度修正(±10) 及 市場環境係數
 function calcMomentumScore(s) {
@@ -1417,11 +1417,11 @@ function rc(s,gi,si,readonly=false){
       html+='<span style="font-size:12px;color:#ff9f0a;font-weight:800">總分 '+tot+'</span>';
       html+='</div>';
       html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-bottom:5px">';
-      html+='<div><div style="font-size:11px;color:#7aa8d0;margin-bottom:3px">波段 <span style="color:'+swColor+';font-weight:800">'+sc.swing+'</span></div>'+bar(sc.swing,swColor)+'</div>';
-      html+='<div><div style="font-size:11px;color:#7aa8d0;margin-bottom:3px">短線 <span style="color:'+shColor+';font-weight:800">'+sc.short+'</span></div>'+bar(sc.short,shColor)+'</div>';
+      html+='<div><div style="font-size:11px;color:#7aa8d0;margin-bottom:3px">趨勢健康 <span style="color:'+swColor+';font-weight:800">'+sc.swing+'</span></div>'+bar(sc.swing,swColor)+'</div>';
+      html+='<div><div style="font-size:11px;color:#7aa8d0;margin-bottom:3px">進場時機 <span style="color:'+shColor+';font-weight:800">'+sc.short+'</span></div>'+bar(sc.short,shColor)+'</div>';
       html+='</div>';
-      if(swR) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.6">波段：'+swR+'</div>';
-      if(shR) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.6">短線：'+shR+'</div>';
+      if(swR) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.6">趨勢：'+swR+'</div>';
+      if(shR) html+='<div style="font-size:10.5px;color:#a0b4c8;line-height:1.6">時機：'+shR+'</div>';
       html+='</div>';
       return html;
     })()}
@@ -1430,10 +1430,10 @@ function rc(s,gi,si,readonly=false){
       if(!ms) return '';
       const sc=ms.score;
       const barColor=sc>=75?'#34c759':sc>=50?'#ffd60a':'#ff453a';
-      const lv=sc>=75?'強勢啟動':sc>=60?'蓄勢中':sc>=40?'觀察':' 偏弱';
+      const lv=sc>=75?'動能強勁':sc>=60?'蓄勢中':sc>=40?'觀察':'偏弱';
       let html='<div style="margin-top:5px;padding:7px 8px;background:rgba(255,159,10,.07);border-radius:7px;border:1px solid rgba(255,159,10,.2)">';
       html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">';
-      html+='<span style="font-size:11px;color:#ff9f0a;font-weight:700">🚀 主升段啟動分</span>';
+      html+='<span style="font-size:11px;color:#ff9f0a;font-weight:700">🚀 主升段累積分</span>';
       html+='<span style="font-size:12px;font-weight:800;color:'+barColor+'">'+sc+' <span style="font-size:10px;color:#a0b4c8">'+lv+'</span></span>';
       html+='</div>';
       html+='<div style="height:7px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden;margin-bottom:5px">';
@@ -1495,7 +1495,7 @@ async function scan(gi){
         s.near_ma20=r.near_ma20; s.near_ma60d=r.near_ma60d; s.near_ma60=r.near_ma60;
         s.daily=r.daily; s.weekly=r.weekly; s.yesterday=r.yesterday; s.new_high_10=r.new_high_10;
         s.name=r.name||'';
-        // 主升段啟動分欄位
+        // 主升段累積分欄位
         s.vol_today=r.vol_today; s.vol_ma5v=r.vol_ma5v; s.vol_ma20v=r.vol_ma20v;
         s.vol_ratio=r.vol_ratio; s.vol_cv10=r.vol_cv10;
         s.vol_3d_inc=r.vol_3d_inc; s.vol_5d_slope_up=r.vol_5d_slope_up;

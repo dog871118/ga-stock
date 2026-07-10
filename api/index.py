@@ -1,4 +1,6 @@
 # 東東.STOCK - 即時追蹤 + 每日戰報整合版（後端與原 GA Stock v8 相同）
+# v4：大盤分頁新增「📌 收盤價買賣訊號」卡（讀大盤分析 V1.2+ JSON 的「收盤價訊號」欄位，
+#     大字顯示 空手/買進/持有/賣出 + 天數 + 明日關卡價；舊版大盤 JSON 沒有此欄位則自動不顯示）
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import yfinance as yf
@@ -3517,6 +3519,33 @@ function renderMkt(){
       <div style="color:#62788f;margin-top:8px;font-size:11px">溫度擅長標極端、給背景、提醒紀律；不擅長抓精確高低點。當風險溫度計用，不當買賣開關。</div>
     </div>`;
   h+=`</div>`;
+  // ===== ★ v4 新增：收盤價買賣訊號卡（同東東app/V27 個股訊號邏輯，讀 大盤分析 V1.2+ 的「收盤價訊號」欄位）=====
+  const cs=MKT['收盤價訊號']||null;
+  if(cs){
+    const dA=rg(cs,'日線','—'), wA=rg(cs,'週線','—');
+    const dD=Number(rg(cs,'日線天數',0))||0, wD=Number(rg(cs,'週線週數',0))||0;
+    const buyLv=rg(cs,'買進關卡','−'), sellLv=rg(cs,'賣出關卡','−');
+    const inMkt=(dA==='買進'||dA==='持有');
+    h+=`<div class="card" style="border-color:#38bdf8">
+      <div class="card-meta" style="color:#38bdf8;font-weight:700">📌 收盤價買賣訊號（2日收盤突破，同個股訊號邏輯）</div>
+      <div style="display:flex;gap:10px;margin-top:8px">
+        <div style="flex:1;text-align:center;background:#0d1b2a;border:1px solid #1e3a5f;border-radius:10px;padding:10px 6px">
+          <div style="font-size:11px;color:#7aa8d0">日線</div>
+          <div class="${sigColor(dA)}" style="font-size:24px;font-weight:800">${dA}</div>
+          ${dD>0?`<div style="font-size:12px;color:#ff9f0a;font-weight:600">第 ${dD} 天</div>`:''}
+        </div>
+        <div style="flex:1;text-align:center;background:#0d1b2a;border:1px solid #1e3a5f;border-radius:10px;padding:10px 6px">
+          <div style="font-size:11px;color:#7aa8d0">週線</div>
+          <div class="${sigColor(wA)}" style="font-size:24px;font-weight:800">${wA}</div>
+          ${wD>0?`<div style="font-size:12px;color:#ff9f0a;font-weight:600">第 ${wD} 週</div>`:''}
+        </div>
+      </div>
+      <div class="card-meta" style="margin-top:8px;font-size:13px">
+        ${inMkt?`<span>明日收盤 跌破 <b class="c-sell">${sellLv}</b> → 賣出；守住則續抱</span>`
+               :`<span>明日收盤 突破 <b class="c-buy">${buyLv}</b> → 買進；未突破續空手</span>`}
+      </div>
+    </div>`;
+  }
   h+=`<div class="card">
     <div class="card-meta"><span>波段方向 <b style="color:${biasColor(wd)}">${wd}</b>（分 ${rg(MKT,'波段分數')}／信心 ${rg(MKT,'信心')}）</span></div>
     <div class="card-meta"><span>短線時機 <b style="color:${shortColor(sd)}">${sd}</b></span></div>

@@ -111,20 +111,54 @@ def get_signals(stock_id):
         else:
             close_d = df_d['Close'].dropna()
         # 台股週一~五 09:00~13:30為交易時間
-        # 盤中（且最後一筆是今天）才去掉未收盤K棒
         from datetime import datetime, date
         import pytz
         now_tw = datetime.now(pytz.timezone('Asia/Taipei'))
         today_tw = now_tw.date()
-        last_date = close_d.index[-1]
-        if hasattr(last_date, 'date'):
-            last_date = last_date.date()
-        is_today = (last_date == today_tw)
         is_trading = (now_tw.weekday() < 5) and (
             (now_tw.hour == 9 and now_tw.minute >= 0) or
             (9 < now_tw.hour < 13) or
             (now_tw.hour == 13 and now_tw.minute < 30)
         )
+
+        # ── 60分K提前下載（一魚兩吃：補日線掉尾 + 算60分MA240）──
+        c60 = None
+        try:
+            df60 = yf.download(ticker, period="60d", interval="60m", auto_adjust=True, progress=False)
+            if not df60.empty:
+                if isinstance(df60.columns, pd.MultiIndex):
+                    c60 = df60['Close'].iloc[:, 0].dropna()
+                else:
+                    c60 = df60['Close'].dropna()
+        except:
+            pass
+
+        # ── 日線掉尾自我修補 ──
+        # Yahoo 在台灣時間午夜~清晨常暫時缺最後一個交易日的日K，
+        # 用60分K各交易日最後一根的收盤價，把缺的日子補回來
+        try:
+            if c60 is not None and len(c60) > 0 and len(close_d) > 0:
+                last_d_date = close_d.index[-1]
+                if hasattr(last_d_date, 'date'):
+                    last_d_date = last_d_date.date()
+                day_last = {}
+                for ts_, v in c60.items():
+                    d_ = ts_.date() if hasattr(ts_, 'date') else ts_
+                    day_last[d_] = float(v)
+                for d_ in sorted(day_last.keys()):
+                    if d_ <= last_d_date:
+                        continue
+                    if d_ == today_tw and is_trading:
+                        continue  # 今日盤中未收，不補
+                    close_d = pd.concat([close_d, pd.Series([day_last[d_]], index=[pd.Timestamp(d_)])])
+        except:
+            pass
+
+        # 盤中（且最後一筆是今天）才去掉未收盤K棒
+        last_date = close_d.index[-1]
+        if hasattr(last_date, 'date'):
+            last_date = last_date.date()
+        is_today = (last_date == today_tw)
         if is_today and is_trading and len(close_d) > 1:
             close_d = close_d.iloc[:-1]
 
@@ -156,14 +190,8 @@ def get_signals(stock_id):
 
         ma60k240 = None
         try:
-            df60 = yf.download(ticker, period="60d", interval="60m", auto_adjust=True, progress=False)
-            if not df60.empty:
-                if isinstance(df60.columns, pd.MultiIndex):
-                    c60 = df60['Close'].iloc[:, 0].dropna()
-                else:
-                    c60 = df60['Close'].dropna()
-                if len(c60) >= 20:
-                    ma60k240 = round(float(c60.iloc[-min(240,len(c60)):].mean()), 2)
+            if c60 is not None and len(c60) >= 20:
+                ma60k240 = round(float(c60.iloc[-min(240,len(c60)):].mean()), 2)
         except:
             pass
 
@@ -365,6 +393,9 @@ html, body {
   border-top: none; border-left: none; border-right: none;
 }
 .tab.active { color: #38bdf8; border-bottom-color: #38bdf8; font-weight: 700; }
+.tab.sorting { border: 1px dashed rgba(56,189,248,.55); border-radius: 8px; margin: 2px 0; }
+.tab.picked { background: #38bdf8; color: #04223a; border-radius: 8px; font-weight: 700; }
+.tab-sort { color: #ff9f0a; font-weight: 700; }
 .main { padding: 12px 0 80px; max-width: 540px; margin: 0 auto; }
 .grp-bar { display: flex; align-items: center; gap: 8px; padding: 0 14px; margin-bottom: 4px; }
 .grp-name-inp {
@@ -625,12 +656,42 @@ function dk(){
   return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate();
 }
 
-function renderTabs(){
-  const all = allGroups();
-  document.getElementById('tabs').innerHTML=all.map((g,i)=>
-    `<button class="tab${i===cur?' active':''}" onclick="sw(${i})">${g.name}</button>`
-  ).join('');
+const TK = 'ga_taborder_v1';
+let sortMode = false, sortPick = -1;
+
+function loadTabOrder(){
+  const n = allGroups().length;
+  let o = [];
+  try{ o = JSON.parse(localStorage.getItem(TK)) || []; }catch(e){}
+  o = [...new Set(o.filter(i => Number.isInteger(i) && i >= 0 && i < n))];
+  for(let i = 0; i < n; i++) if(!o.includes(i)) o.push(i);  // 新增分頁自動補在後面
+  return o;
 }
+function saveTabOrder(o){ localStorage.setItem(TK, JSON.stringify(o)); }
+
+function renderTabs(){
+  const all = allGroups(), order = loadTabOrder();
+  let h = order.map((gi, pos) =>
+    `<button class="tab${gi===cur?' active':''}${sortMode?' sorting':''}${sortMode&&sortPick===pos?' picked':''}" onclick="tabTap(${pos},${gi})">${all[gi].name}</button>`
+  ).join('');
+  h += `<button class="tab tab-sort" onclick="toggleSort()">${sortMode?'✓ 完成':'⇄'}</button>`;
+  if(sortMode) h += `<button class="tab tab-sort" onclick="resetTabOrder()">↺ 預設</button>`;
+  document.getElementById('tabs').innerHTML = h;
+}
+
+function tabTap(pos, gi){
+  if(!sortMode){ sw(gi); return; }
+  if(sortPick < 0){ sortPick = pos; renderTabs(); return; }
+  if(sortPick !== pos){
+    const o = loadTabOrder();
+    const [mv] = o.splice(sortPick, 1);
+    o.splice(pos, 0, mv);
+    saveTabOrder(o);
+  }
+  sortPick = -1; renderTabs();
+}
+function toggleSort(){ sortMode = !sortMode; sortPick = -1; renderTabs(); }
+function resetTabOrder(){ localStorage.removeItem(TK); sortPick = -1; renderTabs(); }
 
 function getPrevSig(id) {
   try {

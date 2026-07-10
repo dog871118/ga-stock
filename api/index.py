@@ -1,4 +1,5 @@
 # 東東.STOCK - 即時追蹤 + 每日戰報整合版（後端與原 GA Stock v8 相同）
+# v4.1：修正 Yahoo 幽靈K棒（重複/週末日K）造成漲跌 0%、昨日收錯誤的問題
 # v4：大盤分頁新增「📌 收盤價買賣訊號」卡（讀大盤分析 V1.2+ JSON 的「收盤價訊號」欄位，
 #     大字顯示 空手/買進/持有/賣出 + 天數 + 明日關卡價；舊版大盤 JSON 沒有此欄位則自動不顯示）
 from flask import Flask, request, jsonify
@@ -153,6 +154,23 @@ def get_signals(stock_id):
                     if d_ == today_tw and is_trading:
                         continue  # 今日盤中未收，不補
                     close_d = pd.concat([close_d, pd.Series([day_last[d_]], index=[pd.Timestamp(d_)])])
+        except:
+            pass
+
+        # ── v4.1 幽靈K棒防呆 ──
+        # Yahoo 收盤後偶爾會多給一根重複的日K（甚至掛在週六日的日期上），
+        # 造成最後兩根收盤價相同 → 漲跌顯示 0%、昨日收錯誤、訊號天數歪掉。
+        # 規則：台股週六日不交易 → 該日期的日K一律剔除；同一天重複只留第一筆
+        try:
+            mask = []
+            seen = set()
+            for ts_ in close_d.index:
+                d_ = ts_.date() if hasattr(ts_, 'date') else ts_
+                bad = (hasattr(d_, 'weekday') and d_.weekday() >= 5) or (d_ in seen)
+                seen.add(d_)
+                mask.append(not bad)
+            if sum(mask) >= 5:
+                close_d = close_d[mask]
         except:
             pass
 

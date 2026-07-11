@@ -1,4 +1,6 @@
 # 東東.STOCK - 即時追蹤 + 每日戰報整合版（後端與原 GA Stock v8 相同）
+# v4.3：修正 Yahoo「幽靈佔位K棒」——Yahoo 對尚未更新/休市的最新交易日，會塞一根
+#       成交量0、開高低收全等於前日收盤的假K棒 → 從尾端剔除，漲跌不再誤顯示 0%
 # v4.2：修正除息日顯示——昨日收/前日收/漲跌/均線改用「原始收盤價」（與看盤軟體一致），
 #       買賣訊號仍用「還原權息價」計算（除息缺口不會誤觸賣出訊號）
 # v4.1：修正 Yahoo 幽靈K棒（重複/週末日K）造成漲跌 0%、昨日收錯誤的問題
@@ -124,6 +126,31 @@ def get_signals(stock_id):
             return None
         if close_adj is None or len(close_adj) < 5:
             close_adj = close_d
+
+        # ── v4.3：剔除尾端「幽靈佔位K棒」──
+        # Yahoo 對還沒更新（或休市）的最新交易日，常塞一根 成交量0、
+        # 開=高=低=收=前日收盤 的假K棒 → 會造成漲跌 0%、昨日收錯誤、訊號天數歪掉
+        try:
+            vol_s  = _col_d('Volume')
+            high_s = _col_d('High')
+            low_s  = _col_d('Low')
+            while len(close_d) >= 2:
+                t = close_d.index[-1]
+                v = vol_s.get(t) if vol_s is not None else None
+                if v is None or pd.isna(v):
+                    v = 0.0
+                hi = high_s.get(t) if high_s is not None else None
+                lo = low_s.get(t)  if low_s  is not None else None
+                flat = (hi is not None and lo is not None
+                        and not pd.isna(hi) and not pd.isna(lo)
+                        and abs(float(hi) - float(lo)) < 1e-9)
+                same_as_prev = abs(float(close_d.iloc[-1]) - float(close_d.iloc[-2])) < 1e-9
+                if float(v) == 0 and flat and same_as_prev:
+                    close_d = close_d.iloc[:-1]      # 假棒 → 剔除，再檢查新的最後一根
+                else:
+                    break
+        except:
+            pass
         # 台股週一~五 09:00~13:30為交易時間
         from datetime import datetime, date
         import pytz

@@ -1,4 +1,6 @@
 # 東東.STOCK - 即時追蹤 + 每日戰報整合版（後端與原 GA Stock v8 相同）
+# v4.2：修正除息日顯示——昨日收/前日收/漲跌/均線改用「原始收盤價」（與看盤軟體一致），
+#       買賣訊號仍用「還原權息價」計算（除息缺口不會誤觸賣出訊號）
 # v4.1：修正 Yahoo 幽靈K棒（重複/週末日K）造成漲跌 0%、昨日收錯誤的問題
 # v4：大盤分頁新增「📌 收盤價買賣訊號」卡（讀大盤分析 V1.2+ JSON 的「收盤價訊號」欄位，
 #     大字顯示 空手/買進/持有/賣出 + 天數 + 明日關卡價；舊版大盤 JSON 沒有此欄位則自動不顯示）
@@ -106,13 +108,22 @@ def get_signals(stock_id):
     try:
         ticker = resolve_ticker(stock_id)
         # 一次下載一年日線：日線訊號與52週新高共用，減少下載次數
-        df_d = yf.download(ticker, period="1y", auto_adjust=True, progress=False)
+        df_d = yf.download(ticker, period="1y", auto_adjust=False, progress=False)
         if df_d.empty or len(df_d) < 5:
             return None
-        if isinstance(df_d.columns, pd.MultiIndex):
-            close_d = df_d['Close'].iloc[:, 0].dropna()
-        else:
-            close_d = df_d['Close'].dropna()
+        def _col_d(nm):
+            try:
+                if isinstance(df_d.columns, pd.MultiIndex):
+                    return df_d[nm].iloc[:, 0].dropna()
+                return df_d[nm].dropna()
+            except Exception:
+                return None
+        close_d   = _col_d('Close')       # 原始收盤價：顯示/均線用（與看盤軟體相同）
+        close_adj = _col_d('Adj Close')   # 還原權息價：算訊號用（除息日不誤觸賣出）
+        if close_d is None or len(close_d) < 5:
+            return None
+        if close_adj is None or len(close_adj) < 5:
+            close_adj = close_d
         # 台股週一~五 09:00~13:30為交易時間
         from datetime import datetime, date
         import pytz
@@ -187,10 +198,16 @@ def get_signals(stock_id):
         ma10  = round(float(close_d.iloc[-10:].mean()), 2) if len(close_d) >= 10 else None
         ma20  = round(float(close_d.iloc[-20:].mean()), 2) if len(close_d) >= 20 else None
         ma60d = round(float(close_d.iloc[-60:].mean()), 2) if len(close_d) >= 60 else None
-        d_signal, d_action, d_days = calc_signal(close_d.iloc[-20:])
+        # ── v4.2：訊號用還原權息價（與 close_d 清理後的日期對齊；補的日子用原始價）──
+        try:
+            close_adj = close_adj.reindex(close_d.index)
+            close_adj = close_adj.fillna(close_d)
+        except Exception:
+            close_adj = close_d
+        d_signal, d_action, d_days = calc_signal(close_adj.iloc[-20:])
         # 昨日訊號
-        if len(close_d) >= 6:
-            y_signal, y_action, _ = calc_signal(close_d.iloc[-21:-1])
+        if len(close_adj) >= 6:
+            y_signal, y_action, _ = calc_signal(close_adj.iloc[-21:-1])
         else:
             y_signal, y_action = '', ''
         # 創10日新高

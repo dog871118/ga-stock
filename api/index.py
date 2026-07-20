@@ -363,10 +363,13 @@ def sync_load():
 def sync_save():
     try:
         payload = request.json.get('payload', [])
-        r = http_requests.get(GAS_ENDPOINT, params={
+        # 改用 POST 表單送出（與戰報存檔同模式）：
+        # GET 會把資料塞在網址，股票一多、中文群組名經編碼膨脹，
+        # 就會超過 Google 網址長度上限而失敗
+        r = http_requests.post(GAS_ENDPOINT, data={
             'action': 'save',
             'payload': _json.dumps(payload)
-        }, timeout=15)
+        }, timeout=30)
         return jsonify(r.json())
     except Exception as e:
         return jsonify({'error': str(e)}), 500

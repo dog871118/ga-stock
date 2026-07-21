@@ -20,9 +20,9 @@ except Exception:
 
 @app.after_request
 def _no_cache(resp):
-    # API 回應一律不快取，避免瀏覽器拿舊資料
-    if request.path.startswith('/api/'):
-        resp.headers['Cache-Control'] = 'no-store'
+    # 所有回應（含網頁本身）一律不快取：
+    # 部署新版後，瀏覽器重新整理保證拿到最新程式，不會再跑舊版
+    resp.headers['Cache-Control'] = 'no-store'
     return resp
 
 def calc_signal(close_series):
@@ -639,7 +639,7 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK</div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.1</span></div>
     <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
       <button class="hbtn" id="btnSave" onclick="saveCloud()">↑ 存雲端</button>

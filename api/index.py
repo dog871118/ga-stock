@@ -13,6 +13,17 @@ import pandas as pd
 
 app = Flask(__name__)
 CORS(app)
+try:
+    app.json.ensure_ascii = False  # API 輸出直接顯示中文，不轉 \\uXXXX 編碼
+except Exception:
+    pass
+
+@app.after_request
+def _no_cache(resp):
+    # API 回應一律不快取，避免瀏覽器拿舊資料
+    if request.path.startswith('/api/'):
+        resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 def calc_signal(close_series):
     if len(close_series) < 5:
@@ -1328,6 +1339,8 @@ async function saveCloud(){
     if(g.stocks&&g.stocks.length>0) g.stocks.forEach(s=>rows.push([gi,g.name,s.id]));
     else rows.push([gi,g.name,'']);
   });
+  // 分頁順序一併上雲（特殊列：代號99，載入端0-7的過濾會自動略過，向下相容）
+  rows.push([99,'TABORDER',loadTabOrder().join(',')]);
   try{
     const res=await fetch('/api/sync-save',{
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -1356,6 +1369,12 @@ async function loadCloud(){
       const gi=parseInt(row[0]), sid=String(row[2]||'').trim().toUpperCase();
       if(gi>=0&&gi<8 && sid && !ng[gi].stocks.find(s=>s.id===sid)) ng[gi].stocks.push({id:sid});
     });
+    // 套用雲端的分頁順序（若雲端有存），讓每個裝置顯示一致
+    const tor=rows.find(r=>parseInt(r[0])===99 && String(r[1]||'').trim()==='TABORDER');
+    if(tor && String(tor[2]||'').trim()){
+      const o=[...new Set(String(tor[2]).split(',').map(x=>parseInt(x)).filter(x=>Number.isInteger(x)&&x>=0))];
+      if(o.length) saveTabOrder(o);  // loadTabOrder() 讀取時會自動剔除無效值、補齊缺漏
+    }
     groups=ng; sgr(); 
     // 強制清掉舊版 key，避免下次讀到過期資料
     localStorage.removeItem('ga_g_v4');

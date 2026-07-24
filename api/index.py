@@ -639,7 +639,7 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.1</span></div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.2</span></div>
     <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
       <button class="hbtn" id="btnSave" onclick="saveCloud()">↑ 存雲端</button>
@@ -713,8 +713,9 @@ function allGroups() {
     { name:'季線買點', stocks:[], special:'near60' },
     { name:'回踩買點', stocks:[], special:'down' },
     { name:'創新高',   stocks:[], special:'newhigh' },
-    { name:'本日漲停', stocks:[], special:'limitup' },
-    { name:'本日跌停', stocks:[], special:'limitdown' },
+    { name:'週持日買', stocks:[], special:'whold_dbuy' },
+    { name:'週買進',   stocks:[], special:'wbuy' },
+    { name:'週賣出',   stocks:[], special:'wsell' },
   ];
 }
 function sgr() { localStorage.setItem(GK,JSON.stringify(groups)); }
@@ -970,70 +971,12 @@ function sortBySignal(arr) {
   });
 }
 
-// ===== 本日漲停／跌停（代號來自每日戰報，卡片走與自選相同的 /api/batch 管道）=====
-// 這兩組獨立於可編輯群組(1~8)，不會被 9~16 的自動分類掃到
-function getLimitCodes(dir){
-  let r = (typeof RPT!=='undefined' && RPT) ? RPT : null;
-  if(!r){ try{ const s=localStorage.getItem(RPT_KEY); if(s) r=JSON.parse(s); }catch(e){} }
-  if(!r) return null;                       // 連戰報都還沒匯入
-  const arr = dir==='up' ? (r['漲停']||[]) : (r['跌停']||[]);
-  return arr.map(x => typeof x==='string' ? x : (x.t||x.代號||x.id||x.code||'')).filter(Boolean);
-}
-async function renderLimit(dir){
-  renderTabs();
-  const title = dir==='up' ? '本日漲停' : '本日跌停';
-  const myTab = dir==='up' ? 16 : 17;
-  const codes = getLimitCodes(dir);
-  const main = document.getElementById('main');
-  let rptInfo = '';
-  try{ rptInfo = (typeof RPT!=='undefined' && RPT) ? (RPT['日期']||'') : ''; }catch(e){}
-  if(codes === null){
-    main.innerHTML = `<div class="grp-bar"><div class="grp-name-inp">${title}</div></div>
-      <div class="empty">尚未匯入今日戰報，無法取得${dir==='up'?'漲停':'跌停'}清單。<br>
-      請先到「總覽 / 持股」分頁貼上今日戰報（V27 複製來），再回到本頁。</div>`;
-    return;
-  }
-  if(codes.length === 0){
-    main.innerHTML = `<div class="grp-bar"><div class="grp-name-inp">${title}</div></div>
-      <div class="upd-time">資料日期：${rptInfo}</div>
-      <div class="empty">今日無${dir==='up'?'漲停':'跌停'}股票</div>`;
-    return;
-  }
-  main.innerHTML = `<div class="grp-bar"><div class="grp-name-inp">${title}（${codes.length} 檔）</div></div>
-    <div class="upd-time" id="limUpd">載入中… 0/${codes.length}（資料日期 ${rptInfo}）</div>
-    <div class="tbl-hdr">
-      <span class="col-id">代號</span><span class="col-price">收盤價</span>
-      <span class="col-sig">訊號／均線</span><span class="col-del"></span>
-    </div>
-    <div id="limList"></div>`;
-  const listEl = document.getElementById('limList');
-  const updEl  = document.getElementById('limUpd');
-  const got = [];
-  const CH = 12;                            // 一次抓12檔，邊抓邊顯示
-  for(let i=0;i<codes.length;i+=CH){
-    if(cur !== myTab) return;               // 使用者切走就停止
-    const chunk = codes.slice(i, i+CH);
-    try{
-      const res = await fetch('/api/batch?ids='+encodeURIComponent(chunk.join(',')));
-      const data = await res.json();
-      chunk.forEach(full=>{
-        const r = data[full] || data[full.toUpperCase()];
-        if(r){ got.push({ ...r, id: String(full).split('.')[0] }); }
-      });
-    }catch(e){}
-    const sorted = sortBySignal(got);
-    listEl.innerHTML = sorted.map((s,si)=>rc(s, myTab, si, true)).join('');
-    if(updEl) updEl.textContent = `載入中… ${Math.min(i+CH,codes.length)}/${codes.length}（資料日期 ${rptInfo}）`;
-  }
-  if(updEl) updEl.textContent = `資料日期：${rptInfo}　共 ${got.length} 檔　更新：${ts()}`;
-  if(got.length===0) listEl.innerHTML = `<div class="empty">查無資料（可能代號已下市或暫停交易）</div>`;
-}
-
 function renderSpecial(type) {
   renderTabs();
   const titles = {
     'buy':'買進訊號','sell':'賣出訊號','hold':'持有訊號','idle':'空手訊號',
-    'change':'訊號異動','near5':'5日線買點','near10':'10日線買點','near20':'月線買點','near60':'季線買點','down':'回踩買點','newhigh':'創新高'
+    'change':'訊號異動','near5':'5日線買點','near10':'10日線買點','near20':'月線買點','near60':'季線買點','down':'回踩買點','newhigh':'創新高',
+    'whold_dbuy':'週持有＋日買進','wbuy':'週線買進','wsell':'週線賣出'
   };
   const title = titles[type] || type;
   // 收集所有5個群組中符合條件的股票
@@ -1045,6 +988,12 @@ function renderSpecial(type) {
       if (seen.has(s.id)) return;
       if (type==='buy') {
         if (s.daily.action==='買進') { matched.push(s); seen.add(s.id); }
+      } else if (type==='whold_dbuy') {
+        if (s.weekly && s.weekly.action==='持有' && s.daily.action==='買進') { matched.push(s); seen.add(s.id); }
+      } else if (type==='wbuy') {
+        if (s.weekly && s.weekly.action==='買進') { matched.push(s); seen.add(s.id); }
+      } else if (type==='wsell') {
+        if (s.weekly && s.weekly.action==='賣出') { matched.push(s); seen.add(s.id); }
       } else if (type==='sell') {
         if (s.daily.action==='賣出') { matched.push(s); seen.add(s.id); }
       } else if (type==='hold') {
@@ -1113,8 +1062,9 @@ function render(){
   if(cur === 16){ renderSpecial('near60');  return; }
   if(cur === 17){ renderSpecial('down');    return; }
   if(cur === 18){ renderSpecial('newhigh'); return; }
-  if(cur === 19){ renderLimit('up');        return; }
-  if(cur === 20){ renderLimit('down');      return; }
+  if(cur === 19){ renderSpecial('whold_dbuy'); return; }
+  if(cur === 20){ renderSpecial('wbuy');    return; }
+  if(cur === 21){ renderSpecial('wsell');   return; }
   const g=groups[cur];
   let h=`
   <div class="grp-bar">

@@ -608,6 +608,20 @@ html, body {
 }
 .hist-title { font-size: 15px; font-weight: 700; color: #ffffff; }
 .hist-x { background: none; border: none; color: #ffffff; font-size: 22px; cursor: pointer; }
+.sig-sheet { max-height: 84vh; }
+.sig-body { overflow-y: auto; padding: 4px 16px 22px; }
+.sig-sec { font-size: 14px; font-weight: 700; color: #38bdf8; margin: 16px 0 8px; }
+.sig-sub { font-size: 11px; color: #7aa8d0; font-weight: 400; }
+.sig-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; font-size: 13px; color: #dfe8f2; line-height: 1.55; border-bottom: 1px solid #0d1b2a; }
+.sig-row b { color: #ffffff; }
+.sig-tag { flex: 0 0 auto; min-width: 44px; text-align: center; padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
+.sig-tag.buy  { background: rgba(52,199,89,.16); color: #34c759; }
+.sig-tag.hold { background: rgba(255,214,10,.16); color: #ffd60a; }
+.sig-tag.sell { background: rgba(255,69,58,.16);  color: #ff453a; }
+.sig-tag.idle { background: rgba(255,255,255,.12); color: #ffffff; }
+.sig-combo { font-size: 12.5px; color: #dfe8f2; padding: 8px 12px; margin: 7px 0; background: #0e1c30; border-left: 3px solid #38bdf8; border-radius: 6px; line-height: 1.55; }
+.sig-combo b { color: #ffd60a; }
+.sig-foot { font-size: 11px; color: #7aa8d0; margin-top: 16px; line-height: 1.6; padding-top: 12px; border-top: 1px solid #1e3a5f; }
 .hist-list { overflow-y: auto; flex: 1; }
 .h-date { font-size: 11px; color: #38bdf8; padding: 10px 16px 4px; }
 .h-meta { font-size: 11px; color: #ffffff; padding: 0 16px 4px; }
@@ -639,8 +653,9 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.2</span></div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.3</span></div>
     <div class="hdr-btns" id="trackBtns">
+      <button class="hbtn" onclick="toggleSigHelp()">❔ 說明</button>
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
       <button class="hbtn" id="btnSave" onclick="saveCloud()">↑ 存雲端</button>
       <button class="hbtn" onclick="toggleHist()">≡ 歷史</button>
@@ -671,6 +686,36 @@ html, body {
     </div>
     <div class="hist-list" id="histList"></div>
     <button class="hist-clr" onclick="clearHist()">清除所有歷史</button>
+  </div>
+</div>
+
+<div class="hist-overlay" id="sigOverlay" onclick="closeSigBg(event)">
+  <div class="hist-sheet sig-sheet">
+    <div class="hist-top">
+      <span class="hist-title">訊號說明</span>
+      <button class="hist-x" onclick="toggleSigHelp()">×</button>
+    </div>
+    <div class="sig-body">
+      <div class="sig-sec">日線訊號 <span class="sig-sub">短線進出節奏</span></div>
+      <div class="sig-row"><span class="sig-tag buy">買進</span><span>今日收盤突破<b>前兩日高點</b>，短線轉強、出現進場點。</span></div>
+      <div class="sig-row"><span class="sig-tag hold">持有</span><span>續抱中、尚未跌破前兩日低點，抱牢不動。</span></div>
+      <div class="sig-row"><span class="sig-tag sell">賣出</span><span>今日收盤跌破<b>前兩日低點</b>，短線轉弱、該出場。</span></div>
+      <div class="sig-row"><span class="sig-tag idle">空手</span><span>賣出後尚未再突破，空手觀望、等下一個買進。</span></div>
+
+      <div class="sig-sec">週線訊號 <span class="sig-sub">波段方向</span></div>
+      <div class="sig-row"><span class="sig-tag buy">買進</span><span>本週突破<b>前兩週高點</b>，波段翻多、中線可佈局。</span></div>
+      <div class="sig-row"><span class="sig-tag hold">持有</span><span>波段續抱中，方向仍偏多。</span></div>
+      <div class="sig-row"><span class="sig-tag sell">賣出</span><span>本週跌破<b>前兩週低點</b>，波段轉空、該減碼出場。</span></div>
+      <div class="sig-row"><span class="sig-tag idle">空手</span><span>波段空手觀望，等波段翻多再進。</span></div>
+
+      <div class="sig-sec">日週搭配看 <span class="sig-sub">實戰重點</span></div>
+      <div class="sig-combo"><b>日買進 ＋ 週買進／持有</b>：短線與波段同方向，順勢做多最順手。</div>
+      <div class="sig-combo"><b>日賣出 ＋ 週持有</b>：短線拉回但波段未壞，可能是洗盤，看週線守不守。</div>
+      <div class="sig-combo"><b>日賣出 ＋ 週賣出</b>：短線與波段同步轉弱，果斷出場不留戀。</div>
+      <div class="sig-combo"><b>日買進 ＋ 週賣出</b>：波段仍偏空、只是短線反彈，追高要小心。</div>
+
+      <div class="sig-foot">訊號用「2 日高低點突破」計算：日線看日收盤、週線看週收盤，各自獨立判斷。盤中未收盤的 K 棒不列入計算。</div>
+    </div>
   </div>
 </div>
 
@@ -1344,6 +1389,8 @@ function toggleHist(){
   if(o.classList.contains('open')) renderHist();
 }
 function closeHistBg(e){if(e.target===document.getElementById('histOverlay'))toggleHist();}
+function toggleSigHelp(){document.getElementById('sigOverlay').classList.toggle('open');}
+function closeSigBg(e){if(e.target===document.getElementById('sigOverlay'))toggleSigHelp();}
 
 function renderHist(){
   const hist=lhi(), el=document.getElementById('histList');

@@ -287,6 +287,19 @@ def get_signals(stock_id):
         prev_price  = round(float(close_d.iloc[-2]), 2) if len(close_d) >= 2 else None
         prev2_price = round(float(close_d.iloc[-3]), 2) if len(close_d) >= 3 else None
 
+        # v6.8：量能比（今日量 / 前20日均量），供假突破品質判斷
+        vol_ratio = None
+        try:
+            if vol_s is not None:
+                v_al = vol_s.reindex(close_d.index)
+                if len(v_al.dropna()) >= 21:
+                    v_today = float(v_al.iloc[-1])
+                    v20 = float(v_al.iloc[-21:-1].mean())
+                    if v20 > 0:
+                        vol_ratio = round(v_today / v20, 2)
+        except Exception:
+            vol_ratio = None
+
         # 接近均線判斷（3%以內）
         def near(p, ma):
             if p and ma:
@@ -342,6 +355,7 @@ def get_signals(stock_id):
             'yesterday':  {'signal': y_signal, 'action': y_action},
             'new_high_10': new_high_10,
             'new_low_10':  new_low_10,
+            'vol_ratio':   vol_ratio,
             'weekly':     {'signal': w_signal, 'action': w_action, 'days': w_days},
         }
     except:
@@ -687,7 +701,7 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.7</span></div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.8</span></div>
     <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" onclick="toggleSigHelp()">❔ 說明</button>
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
@@ -936,7 +950,10 @@ function calcScore(s) {
   // 3. 均線多頭排列 (20分)
   if (s.ma5 && s.ma20 && s.ma60d) {
     if (s.price < s.ma5 && s.ma5 < s.ma20 && s.ma20 < s.ma60d) {
-      sw-=18; swR.push('均線完整空排，趨勢向下');   // v6.6：空頭排列對稱扣分
+      // v6.8：數值空排 ≠ 趨勢向下。季線（慢線）也下彎才算「完整空頭」；
+      // 季線未轉下＝下跌初期，快線先崩、趨勢尚未定案
+      if (s.ma60d_dir==='down') { sw-=18; swR.push('均線完整空排，趨勢向下'); }
+      else { sw-=10; swR.push('短中期空排，惟季線未轉下'); }
     } else if (s.price > s.ma5 && s.ma5 > s.ma20 && s.ma20 > s.ma60d) {
       sw+=20; swR.push('均線完整多排');
     } else if (s.price > s.ma5 && s.ma5 > s.ma20) {
@@ -951,11 +968,13 @@ function calcScore(s) {
     else if (s.price > s.ma20)              { sw+=5;  swR.push('站上MA20'); }
   }
 
-  // 3b. 均線方向（v6.6）：季線＝中期趨勢的方向盤，月線＝波段方向
-  if      (s.ma60d_dir==='up')   { sw+=8;  swR.push('季線上揚'); }
-  else if (s.ma60d_dir==='down') { sw-=12; swR.push('季線下彎，中期趨勢向下'); }
-  if      (s.ma20_dir==='down')  { sw-=8;  swR.push('月線下彎'); }
-  else if (s.ma20_dir==='up')    { sw+=5;  swR.push('月線上揚'); }
+  // 3b. 均線方向（v6.8修正）：上揚加分需「股價站在線上」——
+  //   跌破後的上揚均線是過去漲勢的殘影，已是頭頂反壓，不能加分
+  if      (s.ma60d_dir==='down')                     { sw-=12; swR.push('季線下彎，中期趨勢向下'); }
+  else if (s.ma60d_dir==='up' && s.price>s.ma60d)    { sw+=8;  swR.push('季線上揚'); }
+  else if (s.ma60d_dir==='up' && s.price<s.ma60d)    { swR.push('季線仍上揚但股價已跌破'); }
+  if      (s.ma20_dir==='down')                      { sw-=8;  swR.push('月線下彎'); }
+  else if (s.ma20_dir==='up' && s.price>s.ma20)      { sw+=5;  swR.push('月線上揚'); }
 
   // 4. 週日線共振加成 (10分)
   if ((wA==='買進'||wA==='持有') && (dA==='買進'||dA==='持有')) {
@@ -1006,13 +1025,20 @@ function calcScore(s) {
     if (dA==='買進'||dA==='持有') sh+=nearPts;  // 加分維持原規則
     shR.push(nearLbl);  // 文字提示：只要接近均線就顯示
   }
-  // 2b. 下彎均線反壓：價格貼近「上方且下彎」的均線＝撞牆不是買點，扣分提醒
+  // 2b/2c. 下彎均線的兩種情境（v6.8）：
+  //   還在均線下方＝反壓事實，不妄稱假突破；
+  //   剛站上下彎均線＝看突破品質：量能夠不夠、能否站穩（回跌破才是假突破）
   {
     const nr=(p,m)=>p&&m&&Math.abs(p-m)/m<=0.03;
-    const pr=[['5日線',s.ma5,s.ma5_dir],['10日線',s.ma10,s.ma10_dir],
-              ['月線',s.ma20,s.ma20_dir],['季線',s.ma60d,s.ma60d_dir]]
-              .find(x=>x[2]==='down'&&x[1]>s.price&&nr(s.price,x[1]));
-    if(pr){ sh-=8; shR.push('上方'+pr[0]+'下彎反壓，慎防假突破'); }
+    const mas=[['5日線',s.ma5,s.ma5_dir],['10日線',s.ma10,s.ma10_dir],
+               ['月線',s.ma20,s.ma20_dir],['季線',s.ma60d,s.ma60d_dir]];
+    const below=mas.find(x=>x[2]==='down'&&x[1]>s.price&&nr(s.price,x[1]));
+    const above=mas.find(x=>x[2]==='down'&&x[1]<s.price&&nr(s.price,x[1]));
+    if(below){ sh-=8; shR.push('上方'+below[0]+'下彎反壓'); }
+    else if(above && s.vol_ratio!=null){
+      if(s.vol_ratio>=1.3){ shR.push('帶量('+s.vol_ratio+'倍)站上下彎'+above[0]+'，站穩3日才算有效突破'); }
+      else { sh-=5; shR.push('站上下彎'+above[0]+'但量能不足('+s.vol_ratio+'倍)，回跌破即假突破'); }
+    }
   }
 
   // 3. 今日漲跌幅表現 (15分)
@@ -1266,15 +1292,16 @@ function rc(s,gi,si,readonly=false){
           +'<span style="width:26px;text-align:right;color:'+color+';font-weight:800;font-size:12px">'+w+'</span>'
           +'</div>';
       };
-      const swColor=sc.swing>=75?'#34c759':sc.swing>=45?'#ffd60a':'#ff453a';
-      const shColor=sc.short>=75?'#34c759':sc.short>=45?'#ffd60a':'#ff453a';
+      // 台股慣例：紅=強(好)、綠=弱(差)。>50紅、≤50綠
+      const swColor=sc.swing>50?'#ff453a':'#34c759';
+      const shColor=sc.short>50?'#ff453a':'#34c759';
       const swR=sc.swingReasons.slice(0,3).join('・');
       const shR=sc.shortReasons.slice(0,3).join('・');
       const tot=Math.round(sc.swing*.6+sc.short*.4);
       let html='<div style="margin-top:6px;padding:7px 8px;background:rgba(56,189,248,.07);border-radius:7px;border:1px solid rgba(56,189,248,.15)">';
       html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">';
       html+='<span style="font-size:11px;color:#38bdf8;font-weight:700">▪ 個股評分</span>';
-      html+='<span style="font-size:12px;color:#ff9f0a;font-weight:800">總分 '+tot+'</span>';
+      html+='<span style="font-size:12px;color:'+(tot>50?'#ff453a':'#34c759')+';font-weight:800">總分 '+tot+'</span>';
       html+='</div>';
       html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-bottom:5px">';
       html+='<div><div style="font-size:11px;color:#7aa8d0;margin-bottom:3px">趨勢健康 <span style="color:'+swColor+';font-weight:800">'+sc.swing+'</span></div>'+bar(sc.swing,swColor)+'</div>';
@@ -1337,7 +1364,7 @@ async function scan(gi){
         s.ma60d_dir=r.ma60d_dir; s.ma60_dir=r.ma60_dir;
         s.near_ma20=r.near_ma20; s.near_ma60d=r.near_ma60d; s.near_ma60=r.near_ma60;
         s.daily=r.daily; s.weekly=r.weekly; s.yesterday=r.yesterday; s.new_high_10=r.new_high_10;
-        s.new_low_10=r.new_low_10;
+        s.new_low_10=r.new_low_10; s.vol_ratio=r.vol_ratio;
         s.name=r.name||'';
         hs.push({id:s.id,price:r.price,daily:r.daily,weekly:r.weekly});
       }

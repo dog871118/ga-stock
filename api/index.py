@@ -10,6 +10,8 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import yfinance as yf
 import pandas as pd
+import numpy as np
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -690,6 +692,28 @@ html, body {
 .bottomnav button{flex:1;background:none;border:none;color:#7aa8d0;font-size:10.5px;font-family:inherit;padding:5px 1px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;border-radius:8px;}
 .bottomnav button .ic{font-size:17px;line-height:1;}
 .bottomnav button.on{color:#38bdf8;background:rgba(56,189,248,.12);}
+.dash-wrap{padding:8px 10px 84px;max-width:540px;margin:0 auto;}
+.dash-sec{margin-bottom:20px;}
+.dash-sec-h{font-size:14px;font-weight:800;padding:6px 2px 8px;border-bottom:2px solid;margin-bottom:6px;}
+.dash-cat{display:flex;align-items:center;gap:8px;margin:11px 2px 5px;}
+.dash-cat-t{font-size:12.5px;color:#cdd9e5;font-weight:700;}
+.dash-cat-n{font-size:11px;color:#0d1b2a;background:#7aa8d0;border-radius:10px;padding:1px 8px;font-weight:800;}
+.dash-mini{display:flex;flex-direction:column;gap:3px;}
+.dmini{display:grid;grid-template-columns:50px 1fr 58px 52px 52px 52px;gap:4px;align-items:center;padding:7px 8px;background:rgba(56,189,248,.05);border-radius:6px;font-size:12.5px;cursor:pointer;}
+.dmini:active{background:rgba(56,189,248,.16);}
+.dm-id{color:#38bdf8;font-weight:700;}
+.dm-nm{color:#ffd60a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.dm-pr{font-weight:700;text-align:right;}
+.dm-ch{text-align:right;font-size:11px;}
+.dm-sg{text-align:center;font-weight:700;font-size:11px;}
+.five-btn{margin:6px 10px 4px;padding:6px 14px;background:rgba(56,189,248,.12);border:1px solid rgba(56,189,248,.35);color:#38bdf8;border-radius:7px;font-size:12px;font-family:inherit;cursor:pointer;}
+.five-btn:active{background:rgba(56,189,248,.28);}
+.five-box{display:none;margin:2px 10px 10px;padding:11px 13px;background:#0e1c30;border-radius:9px;border:1px solid #1e3a5f;}
+.fv-head{font-size:12px;color:#cdd9e5;padding-bottom:9px;margin-bottom:9px;border-bottom:1px solid #1e3a5f;line-height:1.7;}
+.fv-sec{margin-bottom:11px;}
+.fv-t{font-size:13px;font-weight:800;margin-bottom:4px;}
+.fv-b{font-size:12px;color:#c8d6e5;line-height:1.75;}
+.fv-loading{font-size:12px;color:#7aa8d0;padding:10px 0;text-align:center;}
 .imp-bar{padding:8px 14px 4px;}
 .imp-btn{width:100%;background:#132338;border:1px solid #1e3a5f;color:#38bdf8;font-family:inherit;font-size:13px;font-weight:700;padding:10px;border-radius:10px;cursor:pointer;}
 .imp-panel{margin-top:8px;}
@@ -701,7 +725,7 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.8</span></div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v7.0</span></div>
     <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" onclick="toggleSigHelp()">❔ 說明</button>
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
@@ -715,15 +739,12 @@ html, body {
 <div class="main" id="main"></div>
 <div class="main" id="rptMain" style="display:none"></div>
 <div class="main" id="mktMain" style="display:none"></div>
+<div class="main" id="dashMain" style="display:none"></div>
 
 <nav class="bottomnav" id="bottomnav">
   <button data-view="大盤" onclick="selectView('大盤')"><span class="ic">🌡</span>大盤</button>
   <button data-view="track" class="on" onclick="selectView('track')"><span class="ic">📈</span>自選</button>
-  <button data-view="市場總覽" onclick="selectView('市場總覽')"><span class="ic">📊</span>總覽</button>
-  <button data-view="持股現況" onclick="selectView('持股現況')"><span class="ic">💼</span>持股</button>
-  <button data-view="今日精選" onclick="selectView('今日精選')"><span class="ic">⭐</span>精選</button>
-  <button data-view="早期族群" onclick="selectView('早期族群')"><span class="ic">🌱</span>早期</button>
-  <button data-view="明日操作" onclick="selectView('明日操作')"><span class="ic">🎯</span>明日</button>
+  <button data-view="dash" onclick="selectView('dash')"><span class="ic">📊</span>自選總覽</button>
 </nav>
 
 <div class="hist-overlay" id="histOverlay" onclick="closeHistBg(event)">
@@ -769,7 +790,7 @@ html, body {
 
 <script>
 const GK = 'ga_g_v5', HK = 'ga_h_v5', SK = 'ga_sig_v5';
-const DN = ['自選群組1','自選群組2','自選群組3','自選群組4','自選群組5','自選群組6','自選群組7','自選群組8'];
+const DN = ['自選群組1','自選群組2','自選群組3','自選群組4','自選群組5','自選群組6','自選群組7','自選群組8','自選群組9','自選群組10'];
 const SPECIAL_GROUPS = [
   { name: '均線買點', idx: 5 },
   { name: '回踩買點', idx: 6 },
@@ -779,16 +800,12 @@ const SPECIAL_GROUPS = [
 function lgr() {
   try {
     const d=JSON.parse(localStorage.getItem(GK));
-    // 已是8群組 → 直接用
-    if(d && d.length===8) return d;
-    // 舊版4群組（你原本的自選）→ 保留前4個，後面補4個空群組，湊成8個
-    if(d && d.length>=1 && d.length<8){
-      const out = d.slice(0,8);
-      for(let i=out.length;i<8;i++) out.push({name:DN[i],stocks:[]});
+    if(d && d.length>=1){
+      // 任何舊版數量 → 取前10、不足補空群組，統一成10群組
+      const out = d.slice(0,10);
+      for(let i=out.length;i<10;i++) out.push({name:DN[i],stocks:[]});
       return out;
     }
-    // 更舊版5群組 → 取前4，補到8
-    if(d && d.length>8) return d.slice(0,8);
   } catch(e){}
   return DN.map(n=>({name:n,stocks:[]}));
 }
@@ -833,7 +850,7 @@ const TK = 'ga_taborder_v1';
 let sortMode = false, sortPick = -1;
 
 function loadTabOrder(){
-  const n = allGroups().length;
+  const n = groups.length;  // 只排自選群組(10)，特殊分類移到「自選總覽」
   let o = [];
   try{ o = JSON.parse(localStorage.getItem(TK)) || []; }catch(e){}
   o = [...new Set(o.filter(i => Number.isInteger(i) && i >= 0 && i < n))];
@@ -1099,19 +1116,10 @@ function sortBySignal(arr) {
   });
 }
 
-function renderSpecial(type) {
-  renderTabs();
-  const titles = {
-    'buy':'買進訊號','sell':'賣出訊號','hold':'持有訊號','idle':'空手訊號',
-    'change':'訊號異動','near5':'5日線支撐','near10':'10日線支撐','near20':'月線支撐','near60':'季線支撐','press':'均線反壓','down':'回踩買點','newhigh':'創新高',
-    'whold_dbuy':'週持有＋日買進','wbuy':'週線買進','wsell':'週線賣出'
-  };
-  const title = titles[type] || type;
-  // 收集所有5個群組中符合條件的股票
+function filterSpecial(type){
   const seen = new Set();
   const matched = [];
-  groups.forEach(g => {
-    (g.stocks||[]).forEach(s => {
+  groups.forEach(g => {(g.stocks||[]).forEach(s => {
       if (!s.daily) return;
       if (seen.has(s.id)) return;
       if (type==='buy') {
@@ -1151,9 +1159,31 @@ function renderSpecial(type) {
         }
       } else if (type==='newhigh') {
         if (s.new_high_10) { matched.push(s); seen.add(s.id); }
+      } else if (type==='newlow') {
+        if (s.new_low_10) { matched.push(s); seen.add(s.id); }
+      } else if (type==='bull_align') {
+        // 多頭排列：價>MA5>MA20>MA60，正向發散＝主升段候選
+        if (s.ma5&&s.ma20&&s.ma60d && s.price>s.ma5 && s.ma5>s.ma20 && s.ma20>s.ma60d)
+          { matched.push(s); seen.add(s.id); }
+      } else if (type==='bear_align') {
+        // 空頭排列：價<MA5<MA20<MA60，反向發散＝主跌段，該閃或該空
+        if (s.ma5&&s.ma20&&s.ma60d && s.price<s.ma5 && s.ma5<s.ma20 && s.ma20<s.ma60d)
+          { matched.push(s); seen.add(s.id); }
       }
     });
   });
+  return matched;
+}
+
+function renderSpecial(type) {
+  renderTabs();
+  const titles = {
+    'buy':'買進訊號','sell':'賣出訊號','hold':'持有訊號','idle':'空手訊號',
+    'change':'訊號異動','near5':'5日線支撐','near10':'10日線支撐','near20':'月線支撐','near60':'季線支撐','press':'均線反壓','down':'回踩買點','newhigh':'創新高',
+    'whold_dbuy':'週持有＋日買進','wbuy':'週線買進','wsell':'週線賣出'
+  };
+  const title = titles[type] || type;
+  const matched = filterSpecial(type);
 
   let h = `<div class="grp-bar"><div class="grp-name-inp">${title}</div></div>
   <div class="upd-time">掃描前8個群組後自動更新</div>`;
@@ -1182,23 +1212,8 @@ function renderSpecial(type) {
 }
 
 function render(){
+  if(cur>=groups.length||cur<0) cur=0;  // 防呆：cur只在自選群組範圍
   renderTabs();
-  // 特殊群組
-  if(cur === 8) { renderSpecial('buy');     return; }
-  if(cur === 9) { renderSpecial('sell');    return; }
-  if(cur === 10){ renderSpecial('hold');    return; }
-  if(cur === 11){ renderSpecial('idle');    return; }
-  if(cur === 12){ renderSpecial('change');  return; }
-  if(cur === 13){ renderSpecial('near5');   return; }
-  if(cur === 14){ renderSpecial('near10');  return; }
-  if(cur === 15){ renderSpecial('near20');  return; }
-  if(cur === 16){ renderSpecial('near60');  return; }
-  if(cur === 17){ renderSpecial('down');    return; }
-  if(cur === 18){ renderSpecial('newhigh'); return; }
-  if(cur === 19){ renderSpecial('whold_dbuy'); return; }
-  if(cur === 20){ renderSpecial('wbuy');    return; }
-  if(cur === 21){ renderSpecial('wsell');   return; }
-  if(cur === 22){ renderSpecial('press');   return; }
   const g=groups[cur];
   let h=`
   <div class="grp-bar">
@@ -1312,11 +1327,45 @@ function rc(s,gi,si,readonly=false){
       html+='</div>';
       return html;
     })()}
+    <button class="five-btn" onclick="toggleFive('${s.id}','${(s.name||'').replace(/'/g,'')}',this)">▾ 五段式分析</button>
+    <div class="five-box" id="five-${s.id}"></div>
   </div>`;
 }
 
 function sw(i){ cur=i; render(); }
 function rn(gi,v){ groups[gi].name=v.trim()||DN[gi]; sgr(); renderTabs(); }
+
+// ===== 五段式分析（點卡片展開，即時抓60分K計算）=====
+function renderFiveHtml(d){
+  const f=d.five||{};
+  const C='#38bdf8';
+  const sec=(t,body)=> body
+    ? `<div class="fv-sec"><div class="fv-t" style="color:${C}">${t}</div><div class="fv-b">${String(body).replace(/\n/g,'<br>')}</div></div>`
+    : '';
+  const rr = d.rr!=null ? `　風報比 1:${d.rr}` : '';
+  return `<div class="fv-head">${d.name||''} ${d.id}　收盤 <b style="color:#ffd60a">${d.close}</b>　`
+       + `訊號 <b>${d.sig||''}</b>${d.hold_days?'（'+d.hold_days+'天）':''}<br>`
+       + `停損 ${d.stop} ${d.stop_basis?'('+d.stop_basis+')':''}　波段目標 ${d.target}${rr}</div>`
+       + sec('一、波段方向', f['波段方向'])
+       + sec('二、多週期細看', f['多週期'])
+       + sec('三、撐壓', f['撐壓'])
+       + sec('四、交易計畫', f['交易計畫'])
+       + sec('五、明日觀察', f['明日觀察']);
+}
+async function toggleFive(id,name,btn){
+  const box=document.getElementById('five-'+id);
+  if(!box) return;
+  if(box.dataset.open==='1'){ box.style.display='none'; box.dataset.open='0'; btn.textContent='▾ 五段式分析'; return; }
+  if(box.dataset.loaded==='1'){ box.style.display='block'; box.dataset.open='1'; btn.textContent='▴ 收合'; return; }
+  btn.textContent='分析中…'; box.style.display='block';
+  box.innerHTML='<div class="fv-loading">抓取 60 分 K、計算五段式中…（約 1～3 秒）</div>';
+  try{
+    const r=await fetch(`/api/five?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`,{signal:AbortSignal.timeout(25000)});
+    const d=await r.json();
+    if(d && d.ok){ box.innerHTML=renderFiveHtml(d); box.dataset.loaded='1'; box.dataset.open='1'; btn.textContent='▴ 收合'; }
+    else { box.innerHTML='<div class="fv-loading">分析失敗：'+((d&&d.error)||'未知錯誤')+'</div>'; btn.textContent='▾ 五段式分析'; }
+  }catch(e){ box.innerHTML='<div class="fv-loading">分析逾時，稍後再試</div>'; btn.textContent='▾ 五段式分析'; }
+}
 
 function add(gi){
   const inp=document.getElementById('addInp');
@@ -1421,7 +1470,7 @@ async function autoScanGroups(idxList){
   window._autoScanning=false;
   saveSnapshotSilent();  // 全部掃完 → 一次把快照上雲
   // 掃描完後，如果在特殊群組頁則重新渲染
-  if(cur<8) {
+  if(cur<10) {
     cur=groups.findIndex(g=>g.stocks&&g.stocks.length>0);
     if(cur<0) cur=0;
   }
@@ -1429,21 +1478,21 @@ async function autoScanGroups(idxList){
 }
 
 async function autoScan(){
-  await autoScanGroups([0,1,2,3,4,5,6,7]);
+  await autoScanGroups([0,1,2,3,4,5,6,7,8,9]);
 }
 
 // ── 組出要上雲的資料列：自選清單 + 分頁順序 + 掃描快照（代號98，舊版載入會自動略過）──
 function buildSyncRows(includeSnap){
   const rows=[];
-  groups.slice(0,8).forEach((g,gi)=>{
+  groups.slice(0,10).forEach((g,gi)=>{
     if(g.stocks&&g.stocks.length>0) g.stocks.forEach(s=>rows.push([gi,g.name,s.id]));
     else rows.push([gi,g.name,'']);
   });
   rows.push([99,'TABORDER',loadTabOrder().join(',')]);
   if(includeSnap){
-    const hasData=groups.slice(0,8).some(g=>(g.stocks||[]).some(s=>s.daily));
+    const hasData=groups.slice(0,10).some(g=>(g.stocks||[]).some(s=>s.daily));
     if(hasData){
-      const snap={t:Date.now(),g:groups.slice(0,8).map(g=>({
+      const snap={t:Date.now(),g:groups.slice(0,10).map(g=>({
         name:g.name,lastUpdate:g.lastUpdate||'',stocks:g.stocks||[]}))};
       const str=JSON.stringify(snap);
       const CH=40000;  // Google Sheet 單格上限5萬字，切4萬保險
@@ -1488,11 +1537,11 @@ async function loadCloud(){
     const ng=DN.map((n,i)=>({name:n,stocks:[]}));
     rows.forEach(row=>{
       const gi=parseInt(row[0]);
-      if(gi>=0&&gi<8 && row[1]) ng[gi].name=row[1];
+      if(gi>=0&&gi<10 && row[1]) ng[gi].name=row[1];
     });
     rows.filter(r=>r&&String(r[2]||'').trim()!=='').forEach(row=>{
       const gi=parseInt(row[0]), sid=String(row[2]||'').trim().toUpperCase();
-      if(gi>=0&&gi<8 && sid && !ng[gi].stocks.find(s=>s.id===sid)) ng[gi].stocks.push({id:sid});
+      if(gi>=0&&gi<10 && sid && !ng[gi].stocks.find(s=>s.id===sid)) ng[gi].stocks.push({id:sid});
     });
     // 套用雲端的分頁順序（若雲端有存），讓每個裝置顯示一致
     const tor=rows.find(r=>parseInt(r[0])===99 && String(r[1]||'').trim()==='TABORDER');
@@ -1528,7 +1577,7 @@ async function loadCloud(){
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},1500);
     // ── 智慧補掃：只掃「有股票缺資料」的群組（例如別台新增的）；快照齊全就完全不掃 ──
     const need=[];
-    groups.slice(0,8).forEach((g,gi)=>{
+    groups.slice(0,10).forEach((g,gi)=>{
       // v6.7：沒掃過(!daily) 或 是舊版掃的(!ma5_dir，缺均線方向) → 都要補掃
       if((g.stocks||[]).length>0 && g.stocks.some(s=>!s.daily || !s.ma5_dir)) need.push(gi);
     });
@@ -3825,20 +3874,93 @@ function renderMkt(){
   m.innerHTML=h;
 }
 
+// ===== 自選總覽：垂直儀表板（v6.9）=====
+const DASH_SECTIONS = [
+  { title:'🔀 均線排列（趨勢濾網）', color:'#ff9f0a', items:[
+      ['bull_align','多頭排列 · 主升段候選'], ['bear_align','空頭排列 · 主跌段／該閃'] ]},
+  { title:'📊 訊號', color:'#38bdf8', items:[
+      ['buy','買進'], ['sell','賣出'], ['hold','持有'], ['idle','空手'], ['change','訊號異動'] ]},
+  { title:'📈 型態', color:'#a78bfa', items:[
+      ['newhigh','創10日新高'], ['newlow','創10日新低'] ]},
+  { title:'🟢 均線支撐（上揚·回踩點）', color:'#34c759', items:[
+      ['near5','5日線支撐'], ['near10','10日線支撐'], ['near20','月線支撐'], ['near60','季線支撐'] ]},
+  { title:'🔴 均線壓力（下彎·反壓）', color:'#ff453a', items:[
+      ['press','均線反壓'] ]},
+  { title:'📆 週線', color:'#7aa8d0', items:[
+      ['whold_dbuy','週持有＋日買進'], ['wbuy','週線買進'], ['wsell','週線賣出'] ]},
+];
+
+function dashMini(s){
+  const d=s.daily||{}, w=s.weekly||{};
+  // 台股慣例：買進紅、賣出綠、持有黃、空手灰
+  const sc=a=> a==='買進'?'#ff453a':a==='賣出'?'#34c759':a==='持有'?'#ffd60a':'#9fb2c6';
+  const chg = s.prev_price ? ((s.price-s.prev_price)/s.prev_price*100) : null;
+  const chgTxt = chg!=null ? ((chg>=0?'+':'')+chg.toFixed(1)+'%') : '';
+  const chgCol = chg==null?'#9fb2c6':(chg>=0?'#ff453a':'#34c759');
+  return `<div class="dmini" onclick="gotoStock('${s.id}')">
+    <span class="dm-id">${s.id}</span>
+    <span class="dm-nm">${s.name||''}</span>
+    <span class="dm-pr" style="color:${chgCol}">${s.price!=null?s.price:'—'}</span>
+    <span class="dm-ch" style="color:${chgCol}">${chgTxt}</span>
+    <span class="dm-sg" style="color:${sc(d.action)}">日${d.action||'—'}</span>
+    <span class="dm-sg" style="color:${sc(w.action)};opacity:.8">週${w.action||'—'}</span>
+  </div>`;
+}
+
+function renderDashboard(){
+  const anyData = groups.some(g=>(g.stocks||[]).some(s=>s.daily));
+  let h='<div class="dash-wrap">';
+  if(!anyData){
+    h+='<div class="empty">尚無掃描資料——請先到「自選」讓它掃描一次，再回來看總覽</div>';
+  } else {
+    let total=0;
+    DASH_SECTIONS.forEach(sec=>{
+      let block='';
+      sec.items.forEach(([type,label])=>{
+        const list=sortBySignal(filterSpecial(type));
+        if(list.length===0) return;
+        total+=list.length;
+        block+=`<div class="dash-cat"><span class="dash-cat-t">▎${label}</span><span class="dash-cat-n">${list.length}</span></div>`;
+        block+='<div class="dash-mini">'+list.map(s=>dashMini(s)).join('')+'</div>';
+      });
+      if(block){
+        h+=`<div class="dash-sec"><div class="dash-sec-h" style="color:${sec.color};border-color:${sec.color}">${sec.title}</div>${block}</div>`;
+      }
+    });
+    if(total===0) h+='<div class="empty">目前沒有任何分類觸發</div>';
+  }
+  h+='</div>';
+  document.getElementById('dashMain').innerHTML=h;
+}
+
+function gotoStock(id){
+  for(let i=0;i<groups.length;i++){
+    if((groups[i].stocks||[]).some(s=>s.id===id)){
+      cur=i; selectView('track');
+      setTimeout(()=>{
+        const el=[...document.querySelectorAll('.stk-id,.col-id')].find(e=>e.textContent.trim()===id);
+        if(el) el.scrollIntoView({block:'center',behavior:'smooth'});
+      },120);
+      return;
+    }
+  }
+}
+
 function selectView(v){
   const track=(v==='track');
   const mkt=(v==='大盤');
+  const dash=(v==='dash');
   document.querySelectorAll('.bottomnav button').forEach(b=>b.classList.toggle('on', b.dataset.view===v));
-  document.getElementById('tabs').style.display     = track?'flex':'none';
-  document.getElementById('main').style.display     = track?'block':'none';
-  document.getElementById('trackBtns').style.display= track?'flex':'none';
-  document.getElementById('rptMain').style.display  = (track||mkt)?'none':'block';
-  document.getElementById('mktMain').style.display  = mkt?'block':'none';
+  document.getElementById('tabs').style.display      = track?'flex':'none';
+  document.getElementById('main').style.display      = track?'block':'none';
+  document.getElementById('trackBtns').style.display = track?'flex':'none';
+  document.getElementById('mktMain').style.display   = mkt?'block':'none';
+  document.getElementById('dashMain').style.display  = dash?'block':'none';
+  const rpt=document.getElementById('rptMain'); if(rpt) rpt.style.display='none';
   window.scrollTo(0,0);
   if(track){ render(); return; }
   if(mkt){ if(!mktLoaded){ loadMarket(); } else { renderMkt(); } return; }
-  rptTab=v;
-  if(!rptLoaded){ loadReport(); } else { renderRpt(); }
+  if(dash){ renderDashboard(); return; }
 }
 
 function renderRptTabs(){
@@ -4077,6 +4199,1168 @@ window.addEventListener('load',()=>{ setTimeout(()=>loadCloud(),5000); });
 </script>
 </body>
 </html>"""
+
+
+def fa_round_price(price):
+    """價格整數化：依股價區間取合理單位"""
+    if price < 10:
+        return round(price * 4) / 4      # 0.25為單位
+    elif price < 50:
+        return round(price * 2) / 2      # 0.5為單位
+    elif price < 200:
+        return round(price)              # 1元為單位
+    elif price < 500:
+        return round(price / 5) * 5     # 5元為單位
+    else:
+        return round(price / 10) * 10   # 10元為單位
+
+
+def fa_get_data(stock, interval="1d", period="1y"):
+    try:
+        df = yf.download(stock, period=period, interval=interval,
+                         progress=False, auto_adjust=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df.dropna(inplace=True)
+        return df if len(df) >= 10 else None
+    except Exception as e:
+        print(f"  {stock} [{interval}] 下載失敗：{e}")
+        return None
+
+
+def fa__daily_from_60m(df60):
+    try:
+        if df60 is None or len(df60) == 0:
+            return None
+        d = df60.copy()
+        if isinstance(d.columns, pd.MultiIndex):
+            d.columns = d.columns.get_level_values(0)
+        idx = pd.to_datetime(d.index)
+        try:
+            if getattr(idx, "tz", None) is not None:
+                idx = idx.tz_convert("Asia/Taipei")
+        except Exception:
+            pass
+        key = pd.to_datetime([pd.Timestamp(t).strftime("%Y-%m-%d") for t in idx])
+        vol = list(d["Volume"]) if "Volume" in d.columns else [0]*len(d)
+        fr = pd.DataFrame({"Open":list(d["Open"]), "High":list(d["High"]),
+                           "Low":list(d["Low"]), "Close":list(d["Close"]),
+                           "Volume":vol}, index=key).dropna(subset=["Close"])
+        g = fr.groupby(level=0)
+        return pd.DataFrame({"Open":g["Open"].first(), "High":g["High"].max(),
+                             "Low":g["Low"].min(), "Close":g["Close"].last(),
+                             "Volume":g["Volume"].sum()}).sort_index()
+    except Exception:
+        return None
+
+
+def fa_patch_daily_with_60m(df_daily, df60):
+    """若日線缺最新交易日，用60分K聚合的日K補上；回傳(補好的df, 是否有補)"""
+    try:
+        if df_daily is None or len(df_daily) == 0 or df60 is None:
+            return df_daily, False
+        dd = fa__daily_from_60m(df60)
+        if dd is None or len(dd) == 0:
+            return df_daily, False
+        last_daily = pd.Timestamp(df_daily.index[-1]).strftime("%Y-%m-%d")
+        newer_mask = [pd.Timestamp(t).strftime("%Y-%m-%d") > last_daily for t in dd.index]
+        newer = dd[newer_mask]
+        if len(newer) == 0:
+            return df_daily, False
+        out = df_daily.copy()
+        out.index = pd.to_datetime([pd.Timestamp(t).strftime("%Y-%m-%d") for t in out.index])
+        for t, row in newer.iterrows():
+            out.loc[pd.Timestamp(t), ["Open","High","Low","Close","Volume"]] = \
+                [row["Open"], row["High"], row["Low"], row["Close"], row["Volume"]]
+        return out.sort_index(), True
+    except Exception:
+        return df_daily, False
+
+
+def fa_add_ma(df):
+    df = df.copy()
+    df["MA5"]   = df["Close"].rolling(5).mean()
+    df["MA10"]  = df["Close"].rolling(10).mean()
+    df["MA20"]  = df["Close"].rolling(20).mean()
+    df["MA60"]  = df["Close"].rolling(60).mean()   # ★新增
+    df["MA120"] = df["Close"].rolling(120).mean()  # ★新增
+    df["MA50"]  = df["Close"].rolling(50).mean()
+    df["MA150"] = df["Close"].rolling(150).mean()
+    df["MA200"] = df["Close"].rolling(200).mean()
+    df["VOL5"]  = df["Volume"].rolling(5).mean()   # ★新增
+    df["VOL10"] = df["Volume"].rolling(10).mean()
+    df["VOL20"] = df["Volume"].rolling(20).mean()
+    return df
+
+
+def fa_calc_ma_inertia(df):
+    if len(df) < 20:
+        return "無法判斷", "−"
+    recent = df.iloc[-20:]
+    def count_breaks(col):
+        return sum(1 for i in range(len(recent))
+                   if not pd.isna(recent[col].iloc[i])
+                   and float(recent["Close"].iloc[i]) < float(recent[col].iloc[i]))
+    b5, b10, b20 = count_breaks("MA5"), count_breaks("MA10"), count_breaks("MA20")
+    if b5  <= 2: return "5MA慣性",  "最強"
+    if b10 <= 4: return "10MA慣性", "強"
+    if b20 <= 6: return "20MA慣性", "普通"
+    return "慣性偏弱", "弱"
+
+
+def fa_check_long_term_trend(df):
+    try:
+        c      = float(df["Close"].iloc[-1])
+        ma60   = float(df["MA60"].iloc[-1])  if not pd.isna(df["MA60"].iloc[-1])  else None
+        ma120  = float(df["MA120"].iloc[-1]) if not pd.isna(df["MA120"].iloc[-1]) else None
+
+        if ma120 and len(df) >= 10:
+            ma120_prev = float(df["MA120"].iloc[-10])
+            ma120_up   = ma120 > ma120_prev
+
+            if ma120_up and c > ma120:
+                return "長期多頭", True   # 價格在MA120之上，MA120向上
+            if ma120_up and ma60 and c > ma60:
+                return "中期多頭", True   # 價格在MA60之上，MA120向上
+            if ma120_up:
+                return "長線向上", True   # ★ MA120向上即保留，不強求價格位置
+        return "趨勢未確立", False
+    except:
+        return "無法判斷", False
+
+
+def fa_check_volume(df):
+    try:
+        vol_today = float(df["Volume"].iloc[-1])
+        vol10     = float(df["VOL10"].iloc[-1])
+        # 當日量 >= 500張即可進入分析（原本10日均量>=1500張太嚴格）
+        return vol_today >= 500, round(vol10, 0)
+    except:
+        return False, 0
+
+
+def fa_check_new_high(df):
+    try:
+        c = float(df["Close"].iloc[-1])
+        if len(df) >= 61 and c > float(df["High"].iloc[-61:-1].max()): return "60日新高", True
+        if len(df) >= 21 and c > float(df["High"].iloc[-21:-1].max()): return "20日新高", True
+        return "−", False
+    except:
+        return "−", False
+
+
+def fa_calc_holding_days(df):
+    """
+    往回掃描K棒，找最近一次不間斷持有的起點
+    規則：往前掃，遇到賣訊（收盤 < 前兩日最低）就停
+    那個賣訊的隔天就是持有起點
+    """
+    closes = [float(x) for x in df["Close"].values]
+    n = len(closes)
+    if n < 3:
+        return 1
+
+    hold_start = n - 1  # 預設今天才開始
+
+    for i in range(n-1, 2, -1):
+        c        = closes[i]
+        prev_low = min(closes[i-1], closes[i-2])
+        if c < prev_low:
+            # 遇到賣訊，持有從這天的下一天開始
+            hold_start = i + 1
+            break
+    else:
+        hold_start = 3  # 資料最早起點
+
+    holding_days = n - hold_start
+    return max(holding_days, 1)
+
+
+def fa_calc_tower_signal(df, in_position=None):
+    """
+    四種訊號：
+    🔴買訊  = 今日收盤 > 前兩日最高（進場訊號）
+    🟡持有  = 今日收盤 >= 前兩日最低（不動作）
+    🟢賣訊  = 今日收盤 < 前兩日最低（出場訊號）
+    ⬜空手  = 賣訊後尚未出現買訊（等待）
+
+    in_position：
+      True  = 已持有（輸出持有/賣訊）
+      False = 空手中（輸出買訊/空手）
+      None  = 不知道持倉狀態（用舊邏輯，買訊/持有/賣訊三種）
+    """
+    if len(df) < 3:
+        return "資料不足", "−", 0
+
+    try:
+        c0        = float(df["Close"].iloc[-1])
+        c1        = float(df["Close"].iloc[-2])
+        c2        = float(df["Close"].iloc[-3])
+        prev_high = max(c1, c2)
+        prev_low  = min(c1, c2)
+
+        # 持有天數（賣訊或買訊時才有意義）
+        hold_days = fa_calc_holding_days(df)
+
+        if in_position is True:
+            # 已持有
+            if c0 < prev_low:
+                return "賣訊", f"收盤{fa_round_price(c0)}跌破前兩天低點{fa_round_price(prev_low)}，應出場（持有{hold_days}天）", hold_days
+            else:
+                return "持有", f"收盤{fa_round_price(c0)}未跌破{fa_round_price(prev_low)}，繼續持有第{hold_days}天", hold_days
+
+        elif in_position is False:
+            # 空手中
+            if c0 > prev_high:
+                return "買訊", f"收盤{fa_round_price(c0)}突破前兩天高點{fa_round_price(prev_high)}，可進場", hold_days
+            else:
+                return "空手", f"收盤{fa_round_price(c0)}介於{fa_round_price(prev_low)}～{fa_round_price(prev_high)}，等待突破", hold_days
+
+        else:
+            # 不知道持倉狀態（全市場掃描用）
+            # ★ 用寶塔線狀態機從頭走一遍，判斷「進今天前」是否持有（與 App 自選一致）
+            cs = [float(x) for x in df["Close"].values]
+            pos = False
+            for j in range(2, len(cs) - 1):          # 走到「昨天」為止
+                ph = max(cs[j-1], cs[j-2]); pl = min(cs[j-1], cs[j-2])
+                if   (not pos) and cs[j] > ph: pos = True
+                elif pos and cs[j] < pl:       pos = False
+            pos_prev = pos                            # 進入今天前是否持有
+
+            if (not pos_prev) and c0 > prev_high:
+                return "買訊", f"收盤{fa_round_price(c0)}突破前兩天高點{fa_round_price(prev_high)}，今日進場", 1
+            elif pos_prev and c0 < prev_low:
+                return "賣訊", f"收盤{fa_round_price(c0)}跌破前兩天低點{fa_round_price(prev_low)}，今日出場（持有{hold_days}天）", hold_days
+            elif pos_prev:
+                return "持有", f"收盤{fa_round_price(c0)}未跌破{fa_round_price(prev_low)}，續抱第{hold_days}天", hold_days
+            else:
+                return "空手", f"收盤{fa_round_price(c0)}空手等待，站上{fa_round_price(prev_high)}才進場", hold_days
+
+    except:
+        return "無法判斷", "−", 0
+
+
+def fa_detect_consolidation(df):
+    """
+    偵測整理平台
+    偵測兩種時間長度：短期10天、中期20天
+    條件：
+    1. 振幅 < 15%（價格壓縮）
+    2. 量能平穩（最大量不超過均量2.5倍）
+    3. 今日收盤突破平台上緣 → 追價訊號
+    回傳：找到的所有平台清單
+    """
+    results = []
+
+    for period in [10, 20]:
+        if len(df) < period + 2:
+            continue
+
+        # 整理區間：不含今日，往前數N天
+        window     = df["Close"].iloc[-(period+1):-1]
+        vol_window = df["Volume"].iloc[-(period+1):-1]
+
+        platform_high = float(window.max())
+        platform_low  = float(window.min())
+
+        if platform_low <= 0:
+            continue
+
+        # 振幅 < 15%
+        amplitude = (platform_high - platform_low) / platform_low * 100
+        if amplitude > 15:
+            continue
+
+        # 量能平穩：最大量不超過均量2.5倍
+        vol_mean   = float(vol_window.mean())
+        vol_max    = float(vol_window.max())
+        if vol_mean <= 0:
+            continue
+        vol_stable = vol_max < vol_mean * 2.5
+        if not vol_stable:
+            continue
+
+        # 今日收盤是否突破平台上緣
+        today_close  = float(df["Close"].iloc[-1])
+        breakout     = today_close > platform_high
+
+        results.append({
+            "平台天數": period,
+            "平台上緣": fa_round_price(platform_high),
+            "平台下緣": fa_round_price(platform_low),
+            "平台振幅": round(amplitude, 1),
+            "突破訊號": breakout,
+            "追價點":   fa_round_price(platform_high),
+            "停損點":   fa_round_price(platform_low * 0.98),
+        })
+
+    return results
+
+
+def fa_calc_smart_stoploss(df):
+    """
+    5MA慣性  → 停損 = MA5  略下方（跌破5日線出場）
+    10MA慣性 → 停損 = MA10 略下方（跌破10日線出場）
+    20MA慣性 → 停損 = MA20 略下方（跌破20日線出場）
+    慣性偏弱  → 爆量K棒低點 → 整理平台下緣 → MA20備援
+    所有結果套用 fa_round_price 整數化
+    """
+    ma_in, _ = fa_calc_ma_inertia(df)
+    c  = float(df["Close"].iloc[-1])
+    ma5  = float(df["MA5"].iloc[-1])  if not pd.isna(df["MA5"].iloc[-1])  else None
+    ma10 = float(df["MA10"].iloc[-1]) if not pd.isna(df["MA10"].iloc[-1]) else None
+    ma20 = float(df["MA20"].iloc[-1]) if not pd.isna(df["MA20"].iloc[-1]) else None
+
+    if "5MA"  in ma_in and ma5  and ma5  < c: return fa_round_price(ma5  * 0.99), "跌破5MA"
+    if "10MA" in ma_in and ma10 and ma10 < c: return fa_round_price(ma10 * 0.99), "跌破10MA"
+    if "20MA" in ma_in and ma20 and ma20 < c: return fa_round_price(ma20 * 0.99), "跌破20MA"
+
+    # 慣性偏弱 → 爆量K棒低點（★V27：距離超過12%視為遠在天邊，不採用，改走平台/均線）
+    vol20_v = float(df["VOL20"].iloc[-1]) if not pd.isna(df["VOL20"].iloc[-1]) else None
+    if vol20_v:
+        mask = df["Volume"].iloc[-20:] > vol20_v * 1.5
+        if mask.any():
+            vol_low = float(df["Low"].iloc[-20:][mask].min())
+            if (not np.isnan(vol_low) and vol_low < c
+                    and (c - vol_low) / c <= 0.12):
+                return fa_round_price(vol_low * 0.99), "爆量K棒低點"
+
+    # → 整理平台下緣
+    try:
+        cons = fa_detect_consolidation(df)
+        bp   = next((r for r in cons if r["突破訊號"]), None)
+        if bp and bp["停損點"] < c:
+            return fa_round_price(bp["停損點"]), "平台下緣"
+    except:
+        pass
+
+    # → MA20備援
+    if ma20 and ma20 < c: return fa_round_price(ma20 * 0.99), "跌破20MA（備援）"
+    if ma10 and ma10 < c: return fa_round_price(ma10 * 0.99), "跌破10MA（備援）"
+    if ma5  and ma5  < c: return fa_round_price(ma5  * 0.99), "跌破5MA（備援）"
+    return fa_round_price(c * 0.95), "5%備援"
+
+
+def fa_is_breakout_today(df):
+    try:
+        c     = float(df["Close"].iloc[-1])
+        yc    = float(df["Close"].iloc[-2])
+        h     = float(df["High"].iloc[-1])
+        v     = float(df["Volume"].iloc[-1])
+        vol20 = float(df["VOL20"].iloc[-1]) if not pd.isna(df["VOL20"].iloc[-1]) else None
+        if vol20 is None: return False
+        chg   = (c - yc) / yc * 100
+        vol_x = v / vol20
+        _, is_nh = fa_check_new_high(df)
+        return chg > 7 and vol_x >= 2.0 and is_nh and c >= h * 0.97
+    except:
+        return False
+
+
+def fa_analyze_60m(df60):
+    result = {"wave_pos":"無法判斷","pullback":"無法判斷","target":None}
+    if df60 is None or len(df60) < 20: return result
+    df60 = fa_add_ma(df60)
+    c  = float(df60["Close"].iloc[-1])
+    hi = float(df60["High"].max()); lo = float(df60["Low"].min()); rng = hi - lo
+    if rng > 0:
+        pos = (c - lo) / rng
+        result["wave_pos"] = "初段" if pos < 0.35 else ("中段" if pos < 0.65 else "末段")
+    rh = float(df60["High"].iloc[-30:].max()); rl = float(df60["Low"].iloc[-15:].min())
+    if rh > 0:
+        pb = (rh - rl) / rh
+        result["pullback"] = "健康" if pb <= 0.38 else ("正常" if pb <= 0.5 else "偏深")
+    try:
+        mid  = len(df60) // 2
+        wave = float(df60["High"].iloc[:mid].max()) - float(df60["Low"].iloc[:mid].min())
+        base = float(df60["Low"].iloc[-20:].min())
+        tgt  = base + wave
+        result["target"] = fa_round_price(tgt) if tgt > c else None
+    except:
+        pass
+    return result
+
+
+def fa_merge_sr(df):
+    """
+    支撐壓力計算：完全基於技術分析
+    壓力：1.前高  2.爆量K棒高點
+    支撐：1.前低  2.均線位置  3.爆量K棒低點  4.整理平台下緣
+    最後做價格整數化
+    """
+    c     = float(df["Close"].iloc[-1])
+    vol20 = float(df["VOL20"].iloc[-1]) if not pd.isna(df["VOL20"].iloc[-1]) else None
+
+    ma5   = float(df["MA5"].iloc[-1])  if not pd.isna(df["MA5"].iloc[-1])  else None
+    ma10  = float(df["MA10"].iloc[-1]) if not pd.isna(df["MA10"].iloc[-1]) else None
+    ma20  = float(df["MA20"].iloc[-1]) if not pd.isna(df["MA20"].iloc[-1]) else None
+
+    # ── 壓力計算 ──
+    # 1. 近20日前高
+    recent_high = float(df["High"].iloc[-20:].max())
+
+    # 2. 爆量K棒高點（近60日）
+    vol_high = None
+    if vol20:
+        mask = df["Volume"].iloc[-60:] > vol20 * 1.5
+        if mask.any():
+            vh = float(df["High"].iloc[-60:][mask].max())
+            if not np.isnan(vh):
+                vol_high = vh
+
+    # 壓力取：前高 和 爆量高點 中較近現價的那個
+    r_candidates = [p for p in [recent_high, vol_high] if p and p >= c * 0.98]
+    if r_candidates:
+        r1_raw = min(r_candidates)  # 最近的壓力
+        r2_raw = max(r_candidates)  # 較遠的壓力
+    else:
+        r1_raw = recent_high
+        r2_raw = recent_high * 1.05
+
+    # ── 支撐計算 ──
+    # 1. 近20日前低
+    recent_low = float(df["Low"].iloc[-20:].min())
+
+    # 2. 最近在現價以下的均線（最強支撐）
+    ma_supports = [m for m in [ma5, ma10, ma20] if m and m < c]
+    ma_support  = max(ma_supports) if ma_supports else None
+
+    # 3. 爆量K棒低點（近20日，不抓太舊的）
+    vol_low = None
+    if vol20:
+        mask = df["Volume"].iloc[-20:] > vol20 * 1.5
+        if mask.any():
+            vl = float(df["Low"].iloc[-20:][mask].min())
+            if not np.isnan(vl):
+                vol_low = vl
+
+    # 4. 整理平台下緣
+    platform_low = None
+    try:
+        cons = fa_detect_consolidation(df)
+        bp   = next((r for r in cons if r["突破訊號"]), None)
+        if bp:
+            platform_low = bp["停損點"]
+    except:
+        pass
+
+    # 支撐取：在現價10%以內的支撐才算（太遠的沒意義）
+    s_candidates = [s for s in [ma_support, vol_low, platform_low, recent_low]
+                    if s and s < c and s > c * 0.90]
+    if s_candidates:
+        s1_raw = max(s_candidates)  # 最近的支撐（最高）
+        s2_raw = min(s_candidates)  # 較遠的支撐（最低）
+    elif ma_support:
+        # 退而求其次用均線
+        s1_raw = ma_support
+        s2_raw = ma_support * 0.97
+    else:
+        s1_raw = c * 0.95
+        s2_raw = c * 0.92
+
+    # ── 價格整數化（使用全域 fa_round_price）──
+    r1 = fa_round_price(min(r1_raw, r2_raw))
+    r2 = fa_round_price(max(r1_raw, r2_raw))
+    s1 = fa_round_price(max(s1_raw, s2_raw))
+    s2 = fa_round_price(min(s1_raw, s2_raw))
+
+    # 確保不重疊
+    if r1 == r2: r2 = fa_round_price(r1 * 1.02)
+    if s1 == s2: s2 = fa_round_price(s1 * 0.98)
+
+    return (r1, r2), (s2, s1)
+
+
+def fa_analyze_weekly_env(df_daily):
+    """週線環境：週寶塔狀態機、週MACD紅綠柱、5週線、本週K棒型態"""
+    try:
+        dfw = df_daily.resample("W-FRI").agg(
+            {"Open": "first", "High": "max", "Low": "min",
+             "Close": "last", "Volume": "sum"}).dropna()
+        if len(dfw) < 15:
+            return {"狀態": "資料不足", "文字": "週線：資料不足，無法判斷", "wma5": None}
+
+        closes = [float(x) for x in dfw["Close"].values]
+        c = closes[-1]
+
+        # 週線寶塔狀態機（空手→突破前兩週高才翻多→跌破前兩週低才翻空）
+        pos = False
+        for j in range(2, len(closes)):
+            ph_ = max(closes[j-1], closes[j-2])
+            pl_ = min(closes[j-1], closes[j-2])
+            if (not pos) and closes[j] > ph_:
+                pos = True
+            elif pos and closes[j] < pl_:
+                pos = False
+        tower_w = "續強" if pos else "續弱"
+
+        # 週MACD（紅綠柱與擴大/收斂）
+        ema12 = dfw["Close"].ewm(span=12, adjust=False).mean()
+        ema26 = dfw["Close"].ewm(span=26, adjust=False).mean()
+        dif   = ema12 - ema26
+        macd9 = dif.ewm(span=9, adjust=False).mean()
+        hist  = dif - macd9
+        h0 = float(hist.iloc[-1])
+        h1 = float(hist.iloc[-2]) if len(hist) >= 2 else 0.0
+        dif0 = float(dif.iloc[-1])
+        if h0 > 0:
+            macd_txt = "MACD紅柱" + ("擴大" if h0 > h1 else "收斂")
+        else:
+            macd_txt = "MACD綠柱" + ("擴大" if h0 < h1 else "收斂")
+        dif_txt = f"DIF {round(dif0, 2)}{'（零軸上）' if dif0 > 0 else '（零軸下）'}"
+
+        # 5週線
+        wma5_s = dfw["Close"].rolling(5).mean()
+        wma5 = float(wma5_s.iloc[-1]) if not pd.isna(wma5_s.iloc[-1]) else None
+        wma5_txt = ""
+        if wma5:
+            wma5_txt = f"收盤{'站上' if c >= wma5 else '跌破'}5週線({fa_round_price(wma5)})"
+
+        # 本週K棒型態
+        o = float(dfw["Open"].iloc[-1]); h = float(dfw["High"].iloc[-1]); l = float(dfw["Low"].iloc[-1])
+        body  = abs(c - o)
+        lower = min(c, o) - l
+        upper = h - max(c, o)
+        if lower > max(body, 0.0001) * 1.5 and lower > upper:
+            k_txt = "本週留長下影線，急殺有買盤承接"
+        elif upper > max(body, 0.0001) * 1.5 and upper > lower:
+            k_txt = "本週留長上影線，高檔出現賣壓"
+        elif c >= o:
+            k_txt = "本週收紅"
+        else:
+            k_txt = "本週收黑"
+
+        # 綜合判定
+        if pos and h0 > 0:
+            status = "續強"; concl = "週線多頭結構未壞，波段方向仍是多方。"
+        elif (not pos) and h0 < 0:
+            status = "續弱"; concl = "週線結構轉弱，波段方向偏空，操作保守。"
+        else:
+            status = "轉折中"; concl = "週線多空訊號分歧，屬轉折觀察期。"
+
+        text = (f"週線：寶塔{tower_w}、{macd_txt}、{dif_txt}。"
+                f"{k_txt}{('、' + wma5_txt) if wma5_txt else ''}。{concl}")
+        return {"狀態": status, "文字": text, "wma5": fa_round_price(wma5) if wma5 else None}
+    except Exception:
+        return {"狀態": "無法判斷", "文字": "週線：計算失敗", "wma5": None}
+
+
+def fa_detect_reversal_candle(df):
+    """關鍵反轉K偵測：急跌段出現「大漲＋爆量＋收在當日高點附近」
+    成立時，該K棒低點＝本波最重要的結構支撐，停損自動改用它"""
+    try:
+        if len(df) < 22:
+            return (False, None, "")
+        t = df.iloc[-1]
+        c = float(t["Close"]); h = float(t["High"]); l = float(t["Low"]); v = float(t["Volume"])
+        yc = float(df["Close"].iloc[-2])
+        vol20 = float(df["VOL20"].iloc[-1]) if not pd.isna(df["VOL20"].iloc[-1]) else None
+        if not vol20 or yc <= 0:
+            return (False, None, "")
+        chg = (c - yc) / yc * 100
+        h20 = float(df["High"].iloc[-21:-1].max())
+        prior_drop = (h20 - yc) / h20 * 100 if h20 > 0 else 0   # 反轉前的跌幅
+
+        cond = (chg >= 4 and v > vol20 * 1.5
+                and (h - l) > 0 and (h - c) / (h - l) <= 0.15
+                and prior_drop >= 12)
+        if cond:
+            txt = (f"急跌{round(prior_drop, 1)}%後出現關鍵反轉K"
+                   f"（+{round(chg, 1)}%爆量收最高），低點{fa_round_price(l)}成為新結構支撐")
+            return (True, l, txt)
+        return (False, None, "")
+    except Exception:
+        return (False, None, "")
+
+
+def fa_analyze_60m_detail(df60):
+    """60分結構：均線位置、MACD柱收斂/擴大、寶塔狀態"""
+    try:
+        if df60 is None or len(df60) < 30:
+            return {"文字": "60分：資料不足", "寶塔": "−"}
+        d = df60.copy()
+        d["MA20"] = d["Close"].rolling(20).mean()
+        c = float(d["Close"].iloc[-1])
+        ma20 = float(d["MA20"].iloc[-1]) if not pd.isna(d["MA20"].iloc[-1]) else None
+
+        # 60分寶塔狀態機
+        closes = [float(x) for x in d["Close"].values]
+        pos = False
+        for j in range(2, len(closes)):
+            ph_ = max(closes[j-1], closes[j-2]); pl_ = min(closes[j-1], closes[j-2])
+            if (not pos) and closes[j] > ph_:
+                pos = True
+            elif pos and closes[j] < pl_:
+                pos = False
+        tower60 = "翻多" if pos else "仍偏弱"
+
+        # 60分MACD柱
+        ema12 = d["Close"].ewm(span=12, adjust=False).mean()
+        ema26 = d["Close"].ewm(span=26, adjust=False).mean()
+        dif = ema12 - ema26
+        macd9 = dif.ewm(span=9, adjust=False).mean()
+        hist = dif - macd9
+        h0 = float(hist.iloc[-1])
+        h3 = float(hist.iloc[-4]) if len(hist) >= 4 else h0
+        if h0 < 0 and h0 > h3:
+            macd_txt = "綠柱收斂、DIF勾頭"
+        elif h0 < 0:
+            macd_txt = "綠柱仍在擴大"
+        elif h0 > 0 and h0 >= h3:
+            macd_txt = "紅柱擴大"
+        else:
+            macd_txt = "紅柱收斂"
+
+        if ma20:
+            ma_txt = f"{'站回20T均線上方' if c >= ma20 else '仍在20T均線下方'}({fa_round_price(ma20)})"
+        else:
+            ma_txt = "均線無法計算"
+
+        text = f"60分：{ma_txt}、MACD{macd_txt}、寶塔{tower60}。"
+        return {"文字": text, "寶塔": tower60}
+    except Exception:
+        return {"文字": "60分：計算失敗", "寶塔": "−"}
+
+
+def fa_analyze_today_candle(df):
+    """當日K棒：漲跌幅、量增倍數、收盤位置（取代看不到的內外盤）"""
+    try:
+        t = df.iloc[-1]
+        c = float(t["Close"]); h = float(t["High"]); l = float(t["Low"]); v = float(t["Volume"])
+        yc = float(df["Close"].iloc[-2])
+        vol20 = float(df["VOL20"].iloc[-1]) if not pd.isna(df["VOL20"].iloc[-1]) else None
+        chg = round((c - yc) / yc * 100, 2) if yc > 0 else 0
+        vr = round(v / vol20, 1) if vol20 and vol20 > 0 else None
+        rng = max(h - l, 0.000001)
+
+        pos_ratio = (c - l) / rng
+        if (h - c) / rng <= 0.1:
+            pos_txt = "收在最高點附近"
+        elif pos_ratio <= 0.1:
+            pos_txt = "收在最低點附近"
+        elif pos_ratio >= 0.7:
+            pos_txt = "收在高檔區"
+        elif pos_ratio <= 0.3:
+            pos_txt = "收在低檔區"
+        else:
+            pos_txt = "收在中段"
+
+        if vr is None:
+            vol_txt = "量能無法計算"
+        elif vr >= 1.3:
+            vol_txt = f"量增{vr}倍"
+        elif vr <= 0.7:
+            vol_txt = f"量縮（{vr}倍）"
+        else:
+            vol_txt = f"量平（{vr}倍）"
+
+        chg_txt = f"{'+' if chg >= 0 else ''}{chg}%"
+
+        strength = ""
+        if chg >= 3 and vr and vr >= 1.3 and (h - c) / rng <= 0.1:
+            strength = "尾盤強勢、買盤積極"
+        elif chg <= -3 and vr and vr >= 1.3 and pos_ratio <= 0.1:
+            strength = "尾盤弱勢、賣壓沉重"
+
+        text = f"當日：{chg_txt}、{vol_txt}、{pos_txt}。" + (strength + "。" if strength else "")
+        return {"文字": text}
+    except Exception:
+        return {"文字": "當日：資料計算失敗"}
+
+
+def fa_build_sr_labeled(df, rev_low=None):
+    """帶身分標籤的分層撐壓
+    支撐來源：關鍵反轉K低點、爆量K棒低點、現價下方均線、整理平台下緣、近20日前低
+    壓力來源：前兩日高（寶塔翻多點）、現價上方均線、近20日前高、爆量K棒高點、波段前高（60日高）
+    （照長期規則：絕不用 pivot point 公式）"""
+    c = float(df["Close"].iloc[-1])
+    vol20 = float(df["VOL20"].iloc[-1]) if not pd.isna(df["VOL20"].iloc[-1]) else None
+
+    ma_map = {}
+    for nm, col in [("5日線", "MA5"), ("10日線", "MA10"), ("20日線", "MA20"), ("季線", "MA60")]:
+        if col in df.columns and not pd.isna(df[col].iloc[-1]):
+            ma_map[nm] = float(df[col].iloc[-1])
+
+    sup_raw = []
+    res_raw = []
+
+    # 寶塔關鍵價
+    try:
+        ph = max(float(df["Close"].iloc[-2]), float(df["Close"].iloc[-3]))
+        pl = min(float(df["Close"].iloc[-2]), float(df["Close"].iloc[-3]))
+    except Exception:
+        ph = pl = None
+
+    # ── 支撐候選 ──
+    if rev_low:
+        sup_raw.append((float(rev_low), "關鍵反轉K低點，本波最重要結構支撐"))
+    if vol20:
+        mask = df["Volume"].iloc[-20:] > vol20 * 1.5
+        if mask.any():
+            vl = float(df["Low"].iloc[-20:][mask].min())
+            if not np.isnan(vl):
+                sup_raw.append((vl, "近20日爆量K棒低點"))
+    for nm, v0 in ma_map.items():
+        if v0 < c:
+            sup_raw.append((v0, nm))
+    if len(df) >= 20:
+        sup_raw.append((float(df["Low"].iloc[-20:].min()), "近20日前低"))
+    try:
+        cons = fa_detect_consolidation(df)
+        bp = next((x for x in cons if x["突破訊號"]), None)
+        if bp:
+            sup_raw.append((float(bp["平台下緣"]), "整理平台下緣"))
+    except Exception:
+        pass
+
+    # ── 壓力候選 ──
+    if ph and ph > c:
+        res_raw.append((ph, "前兩日高，寶塔線翻多點"))
+    for nm, v0 in ma_map.items():
+        if v0 > c:
+            res_raw.append((v0, nm))
+    if len(df) >= 21:
+        h20 = float(df["High"].iloc[-21:-1].max())
+        if h20 > c:
+            res_raw.append((h20, "近20日前高"))
+    if vol20:
+        mask = df["Volume"].iloc[-60:] > vol20 * 1.5
+        if mask.any():
+            vh = float(df["High"].iloc[-60:][mask].max())
+            if not np.isnan(vh) and vh > c:
+                res_raw.append((vh, "爆量K棒高點"))
+    if len(df) >= 60:
+        far_h = float(df["High"].iloc[-60:].max())
+        if far_h > c:
+            res_raw.append((far_h, "波段前高"))
+
+    def _merge(raw, reverse):
+        """整數化＋去重：1.5%以內視為同一價位，身分標籤用＋合併"""
+        items = []
+        for p, lbl in raw:
+            rp = fa_round_price(p)
+            merged = False
+            for it in items:
+                if it[0] > 0 and abs(rp - it[0]) / it[0] <= 0.015:
+                    if lbl not in it[1]:
+                        it[1].append(lbl)
+                    merged = True
+                    break
+            if not merged:
+                items.append([rp, [lbl]])
+        items.sort(key=lambda x: x[0], reverse=reverse)
+        return [(p, "＋".join(ls)) for p, ls in items]
+
+    supports = _merge([x for x in sup_raw if x[0] < c and x[0] > c * 0.75], reverse=True)[:3]
+    resists  = _merge([x for x in res_raw if x[0] > c], reverse=False)[:3]
+
+    far = fa_round_price(float(df["High"].iloc[-60:].max())) if len(df) >= 60 else None
+    return {"支撐": supports, "壓力": resists,
+            "ph": fa_round_price(ph) if ph else None,
+            "pl": fa_round_price(pl) if pl else None,
+            "波段前高": far}
+
+
+def fa_get_tomorrow_signal(df_daily, df5):
+    today     = df_daily.iloc[-1]
+    yesterday = df_daily.iloc[-2]
+    c  = float(today["Close"]);  h = float(today["High"])
+    l  = float(today["Low"]);    o = float(today["Open"])
+    yc = float(yesterday["Close"]); v = float(today["Volume"])
+    vol20 = float(df_daily["VOL20"].iloc[-1]) if not pd.isna(df_daily["VOL20"].iloc[-1]) else None
+    ma5   = float(df_daily["MA5"].iloc[-1])   if not pd.isna(df_daily["MA5"].iloc[-1])   else None
+
+    tail_bull = tail_bear = False
+    if df5 is not None and len(df5) >= 6:
+        tail = df5.iloc[-6:]
+        tv = [float(tail["Volume"].iloc[i]) for i in range(6)]
+        tc = [float(tail["Close"].iloc[i])  for i in range(6)]
+        tail_bull = tv[-1] > tv[0] and tc[-1] > tc[0]
+        tail_bear = tv[-1] < tv[0] and tc[-1] < tc[0]
+
+    close_strong = c >= h * 0.97
+    close_weak   = c <= l * 1.03
+    vol_surge    = vol20 and v > vol20 * 1.3
+    vol_shrink   = vol20 and v < vol20 * 0.7
+    ma5_up = ma5 and len(df_daily) >= 6 and float(df_daily["MA5"].iloc[-1]) > float(df_daily["MA5"].iloc[-3])
+    ma5_dn = ma5 and len(df_daily) >= 6 and float(df_daily["MA5"].iloc[-1]) < float(df_daily["MA5"].iloc[-3])
+
+    # ★ V27.1：明日多方計畫改用結構撐壓＋風報比檢查（取代固定百分比）
+    def _bull_plan(e0):
+        """目標＝明日漲停內最近的結構壓力；停損＝進場下方最近的結構支撐
+        風報比 < 1 → 不追價，改成回踩支撐再接"""
+        try:
+            sr_t = fa_build_sr_labeled(df_daily)
+        except Exception:
+            sr_t = {"支撐": [], "壓力": []}
+        lu = fa_round_price(c * 1.10)
+        ld = fa_round_price(c * 0.90)
+        ups = [p for p, _l in sr_t.get("壓力", []) if e0 * 1.01 < p <= lu]
+        dns = [p for p, _l in sr_t.get("支撐", []) if ld <= p < e0]
+        target = ups[0] if ups else lu
+        if dns:
+            stop_b = dns[0]
+        else:
+            stop_b = fa_round_price(min(float(df_daily["Low"].iloc[-1]), e0 * 0.97))
+        rr_b = 0
+        if e0 > stop_b and target > e0:
+            rr_b = round((target - e0) / (e0 - stop_b), 1)
+        if rr_b >= 1:
+            act = f"開盤站穩{e0}可進，目標{target}，跌破{stop_b}出（風報比1:{rr_b}）"
+            return e0, target, stop_b, act
+        # 風報比不足 → 不追價，回踩支撐再接（停損貼在支撐下方：跌破支撐＝看錯）
+        if dns:
+            e2 = dns[0]
+            stop2 = fa_round_price(e2 * 0.99)
+            rr2 = round((target - e2) / (e2 - stop2), 1) if e2 > stop2 and target > e2 else 0
+            if rr2 >= 1:
+                act = (f"壓力{target}太近、追價風報比僅1:{rr_b}不划算；"
+                       f"改回踩{e2}再進，目標{target}，跌破{stop2}（跌破支撐）出（風報比1:{rr2}）")
+                return e2, target, stop2, act
+        act = f"壓力{target}太近、風報比僅1:{rr_b}，明日不追價，觀望為宜"
+        return "−", target, stop_b, act
+
+    if close_strong and tail_bull and vol_surge:
+        entry, target, stop, act = _bull_plan(fa_round_price(c*1.005))
+        return {"訊號":"明日續強","依據":"收盤強勢＋尾盤堆積＋放量","強訊號":True,
+                "進場":entry,"目標":target,"停損":stop,
+                "操作":act}
+    if vol_shrink and not close_weak and tail_bull and ma5_up:
+        entry, target, stop, act = _bull_plan(fa_round_price(c*1.01))
+        return {"訊號":"明日轉強","依據":"縮量整理＋尾盤買盤＋MA5向上","強訊號":True,
+                "進場":entry,"目標":target,"停損":stop,
+                "操作":act}
+    if close_weak and tail_bear and vol_surge:
+        stop = fa_round_price(c*0.97)
+        return {"訊號":"明日續弱","依據":"收盤弱勢＋尾盤賣壓＋放量","強訊號":True,
+                "進場":"−","目標":"−","停損":stop,
+                "操作":f"持股者明日開盤減碼50%，剩餘停損{stop}"}
+    if close_weak and tail_bear and ma5_dn:
+        stop = fa_round_price(l*0.99)
+        return {"訊號":"明日轉弱","依據":"量增價跌＋尾盤破支撐＋MA5向下","強訊號":True,
+                "進場":"−","目標":"−","停損":stop,
+                "操作":f"持股者明日開盤跌破{stop}立即出清"}
+
+    # ── 日線動能備援（df5 尾盤資料不足時，只用日線收盤＋量）──
+    if close_strong and vol_surge:
+        entry, target, stop, act = _bull_plan(fa_round_price(c*1.005))
+        return {"訊號":"明日偏強","依據":"收盤強勢＋放量（日線）","強訊號":True,
+                "進場":entry,"目標":target,"停損":stop,
+                "操作":act}
+    if close_weak and vol_surge:
+        stop=fa_round_price(c*0.97)
+        return {"訊號":"明日偏弱","依據":"收盤弱勢＋放量（日線）","強訊號":True,
+                "進場":"−","目標":"−","停損":stop,
+                "操作":f"持股者開盤減碼，跌破{stop}出清"}
+
+    # ── 結構性備援：依寶塔線關鍵價，保證每檔都有明日計畫（強訊號=False，不進明日分頁）──
+    try:
+        ph = fa_round_price(max(float(df_daily["Close"].iloc[-2]), float(df_daily["Close"].iloc[-3])))
+        pl = fa_round_price(min(float(df_daily["Close"].iloc[-2]), float(df_daily["Close"].iloc[-3])))
+    except:
+        return None
+    if c > ph:
+        return {"訊號":"偏多續抱","依據":"收盤站上前兩日高，趨勢偏多","強訊號":False,
+                "進場":fa_round_price(c),"目標":"−","停損":pl,
+                "操作":f"趨勢偏多，守{pl}（寶塔線）續抱，跌破出場；回踩不破可加碼"}
+    elif c < pl:
+        return {"訊號":"偏空保守","依據":"收盤跌破前兩日低，趨勢偏弱","強訊號":False,
+                "進場":"−","目標":"−","停損":fa_round_price(c),
+                "操作":f"轉弱保守，站回{ph}才轉多；持股者破低續抱風險高"}
+    else:
+        return {"訊號":"區間整理","依據":"收盤介於前兩日高低，方向待定","強訊號":False,
+                "進場":ph,"目標":"−","停損":pl,
+                "操作":f"站上{ph}轉多可進，跌破{pl}轉空出場，之間區間觀望"}
+
+
+def fa_build_holder_advice(weekly_status, sig, rev_flag, fb_st):
+    """持有者建議：以週線環境為最高層，結合日線寶塔狀態、反轉K、假跌破"""
+    if weekly_status == "續強":
+        if sig in ("持有", "買訊"):
+            return "續抱。週線多頭未壞，沿慣性均線操作，未跌破停損不離場"
+        if rev_flag:
+            return "續抱。寶塔線雖未翻多，但週線續強＋出現關鍵反轉K，低檔反轉不停損"
+        if fb_st == "疑似假跌破":
+            return "暫不停損。量縮跌破疑似洗盤，觀察3日內能否收回前低；收回則續抱，收不回再出"
+        if sig == "賣訊":
+            return "減碼防守。日線出賣訊但週線未壞，可先減碼一半，站回寶塔翻多點再接回"
+        return "已出場者等寶塔翻多再進；仍持有者以下方支撐為防守，跌破出場"
+    if weekly_status == "續弱":
+        if sig in ("賣訊", "空手"):
+            return "出場為主。週線與日線同步轉弱，反彈至壓力區減碼，不留戀"
+        return "嚴守停損。週線轉弱下的持有部位，跌破停損立即出場，不凹單"
+    # 轉折中／無法判斷
+    if sig in ("持有", "買訊"):
+        return "續抱但提高警覺。週線進入轉折觀察期，停損務必執行"
+    return "保守觀望。週線方向未明，等寶塔翻多且週線轉強再進場"
+
+
+def fa_build_five_sections(r, df, weekly, sr):
+    """組出五段式分析文字（每段為多行字串，行與行用\\n分隔）"""
+    c    = r["close"]
+    sig  = r["tower_sig"]
+    rev_flag, rev_low, rev_txt = r.get("rev", (False, None, ""))
+    stop = r["stop"]
+    stop_basis = r.get("stop_basis", "−")
+    ma_in = r.get("ma_in", "−")
+    fb_st = r.get("fb_st", "正常")
+
+    ph  = sr.get("ph"); far = sr.get("波段前高")
+    sup = sr.get("支撐", []); res = sr.get("壓力", [])
+    s1  = sup[0][0] if sup else stop
+    r1  = res[0][0] if res else far
+
+    # ── 一、波段方向 ──
+    try:
+        h60 = float(df["High"].iloc[-60:].max()) if len(df) >= 60 else float(df["High"].max())
+        l20 = float(df["Low"].iloc[-20:].min())
+        drop = round((h60 - l20) / h60 * 100, 1) if h60 > 0 else 0
+    except Exception:
+        h60, l20, drop = c, c, 0
+    if rev_flag:
+        day_line = f"日線：從波段高{fa_round_price(h60)}回檔至{fa_round_price(l20)}（約{drop}%），{rev_txt}。"
+    else:
+        pos_pct = (c - l20) / (h60 - l20) * 100 if h60 > l20 else 50
+        pos_txt = "高檔" if pos_pct >= 70 else ("中段" if pos_pct >= 35 else "低檔")
+        day_line = f"日線：波段高{fa_round_price(h60)}、近低{fa_round_price(l20)}，目前位於波段{pos_txt}（本波最大回檔約{drop}%）。"
+    sec1 = weekly["文字"] + "\n" + day_line + "\n" + f"寶塔線判定「{sig}」：{r.get('tower_note', '−')}"
+
+    # ── 二、多週期細看 ──
+    sec2 = r.get("m60", {}).get("文字", "60分：無資料") + "\n" + r.get("day", {}).get("文字", "")
+
+    # ── 三、撐壓 ──
+    sup_txt = "、".join([f"{p}（{lbl}）" for p, lbl in sup]) if sup else "−"
+    res_txt = "、".join([f"{p}（{lbl}）" for p, lbl in res]) if res else "−"
+    sec3 = f"支撐：{sup_txt}\n壓力：{res_txt}"
+
+    # ── 四、交易計畫 ──
+    advice = fa_build_holder_advice(weekly["狀態"], sig, rev_flag, fb_st)
+    entry  = r.get("entry", c)
+    lines4 = [f"週線環境：{weekly['狀態']}",
+              f"持有者建議：{advice}",
+              f"停損：{stop}（{stop_basis}）"]
+    if sig in ("空手", "賣訊") and ph:
+        lines4.append(f"加碼條件：站上{ph}寶塔翻多再加，勿在半空中追")
+    elif ma_in not in ("無法判斷", "慣性偏弱") and sig in ("持有", "買訊"):
+        lines4.append(f"加碼條件：回踩{ma_in.replace('慣性', '')}不破可加碼")
+
+    def _rr(t):
+        try:
+            if t and entry and stop and entry > stop and t > entry * 1.01:
+                v = round((t - entry) / (entry - stop), 1)
+                return v if v > 0 else None
+        except Exception:
+            pass
+        return None
+
+    rr_parts = []
+    rr1 = _rr(r1)
+    if rr1 is not None:
+        tag = "⚠不划算" if rr1 < 1 else ("✓划算" if rr1 >= 1.5 else "△普通")
+        rr_parts.append(f"至近壓{r1}＝{rr1}（{tag}）")
+    rrf = _rr(far) if (far and far != r1) else None
+    if rrf is not None:
+        tag = "⚠不划算" if rrf < 1 else ("✓划算" if rrf >= 1.5 else "△普通")
+        rr_parts.append(f"至波段前高{far}＝{rrf}（{tag}）")
+    if rr_parts:
+        lines4.append(f"風報比（以{entry}進場）：" + "；".join(rr_parts))
+    sec4 = "\n".join(lines4)
+
+    # ── 五、明日觀察（★V27.1：只用明日漲跌停範圍內的撐壓，破撐回測下一撐、過壓往下一壓）──
+    limit_up = fa_round_price(c * 1.10)
+    limit_dn = fa_round_price(c * 0.90)
+    ups = [p for p, _l in res if c < p <= limit_up]
+    dns = [p for p, _l in sup if limit_dn <= p < c]
+    n_r1 = ups[0] if ups else None
+    n_r2 = ups[1] if len(ups) > 1 else None
+    n_s1 = dns[0] if dns else None
+    n_s2 = dns[1] if len(dns) > 1 else None
+
+    # 波段停損明日是否觸及得到
+    stop_in_range = isinstance(stop, (int, float)) and stop >= limit_dn
+
+    if sig in ("空手", "賣訊"):
+        # 偏多劇本：站上寶塔翻多點 → 往近壓，再過看下一壓
+        if n_r1:
+            up_part = (f"盤中站上{ph if ph else n_r1} → 寶塔翻多買訊成立，往{n_r1}"
+                       + (f"，再過看{n_r2}" if n_r2 else f"，再過挑戰漲停{limit_up}"))
+        else:
+            up_part = f"盤中站上{ph if ph else '前兩日高'} → 寶塔翻多買訊成立，明日漲停{limit_up}前無明顯壓力"
+        bull = "偏多劇本：" + (f"開盤守住{n_s1}、" if n_s1 else "") + up_part
+
+        # 偏空劇本：破撐 → 回測下一撐
+        if n_s1:
+            down_part = f"跌破{n_s1} → 回測{n_s2 if n_s2 else f'跌停{limit_dn}附近'}"
+        else:
+            down_part = f"明日跌停{limit_dn}之上無明顯支撐，轉弱就保守"
+        if stop_in_range:
+            if n_s1 and abs(stop - n_s1) / c <= 0.01:
+                down_part = f"跌破{n_s1}＝波段停損（{stop_basis}）→ 照紀律出場"
+            else:
+                down_part += f"；跌破{stop}（{stop_basis}）照紀律出場"
+        else:
+            down_part += f"；波段停損{stop}在明日跌停{limit_dn}之外、明日不會觸發，先以{n_s1 if n_s1 else limit_dn}為防守"
+        bear = "偏空劇本：" + down_part
+    else:
+        # 持有/買訊：逢支撐買、過壓力往下一壓
+        if n_r1:
+            up_part = f"放量過{n_r1} → 往{n_r2}" if n_r2 else f"放量過{n_r1} → 挑戰漲停{limit_up}"
+        else:
+            up_part = f"明日漲停{limit_up}前無明顯壓力，沿勢續抱"
+        bull = "偏多劇本：" + (f"回踩{n_s1}有撐＝加碼點；" if n_s1 else "") + up_part
+
+        if n_s1:
+            down_part = f"跌破{n_s1} → 回測{n_s2 if n_s2 else f'跌停{limit_dn}附近'}"
+        else:
+            down_part = f"明日跌停{limit_dn}之上無明顯支撐，弱勢就先減碼"
+        if stop_in_range:
+            if n_s1 and abs(stop - n_s1) / c <= 0.01:
+                down_part = f"跌破{n_s1}＝波段停損（{stop_basis}）→ 出場，站回{ph if ph else '前兩日高'}再接回"
+            else:
+                down_part += f"；跌破{stop}（{stop_basis}）出場，站回{ph if ph else '前兩日高'}再接回"
+        else:
+            defend = f"跌破{n_s1}先減碼防守" if n_s1 else "弱勢先減碼防守"
+            down_part += f"；波段停損{stop}在明日跌停{limit_dn}之外、明日不會觸發，{defend}"
+        bear = "偏空劇本：" + down_part
+    sec5 = bull + "\n" + bear
+    sec5 = bull + "\n" + bear
+
+    return {"波段方向": sec1, "多週期": sec2, "撐壓": sec3,
+            "交易計畫": sec4, "明日觀察": sec5}
+
+
+def fa_calc_bias(df):
+    """乖離率：收盤相對 MA20 與 季線(MA60)"""
+    try:
+        c = float(df["Close"].iloc[-1])
+        ma20 = float(df["MA20"].iloc[-1]) if not pd.isna(df["MA20"].iloc[-1]) else None
+        ma60 = float(df["MA60"].iloc[-1]) if not pd.isna(df["MA60"].iloc[-1]) else None
+        parts = []
+        if ma20:
+            b = round((c-ma20)/ma20*100,1); parts.append(f"20MA{'+' if b>=0 else ''}{b}%")
+        if ma60:
+            b = round((c-ma60)/ma60*100,1); parts.append(f"季線{'+' if b>=0 else ''}{b}%")
+        return "　".join(parts) if parts else "−"
+    except:
+        return "−"
+
+
+def fa_check_false_breakdown(df):
+    """假跌破偵測：今日若跌破前兩日低（賣訊），用量能判真/假跌破"""
+    try:
+        if len(df) < 21: return "正常", "−"
+        c0 = float(df["Close"].iloc[-1])
+        prev_low = min(float(df["Close"].iloc[-2]), float(df["Close"].iloc[-3]))
+        if c0 >= prev_low:
+            return "正常", "−"
+        v = float(df["Volume"].iloc[-1])
+        vol20 = float(df["VOL20"].iloc[-1]) if not pd.isna(df["VOL20"].iloc[-1]) else None
+        if vol20 and v > vol20 * 1.2:
+            return "真跌破", "量增跌破，確認出場，不回補"
+        elif vol20 and v < vol20 * 0.8:
+            return "疑似假跌破", "量縮跌破，可能洗盤，觀察3日內能否收回前低再決定"
+        else:
+            return "真跌破", "正常量跌破，先視為確認出場保護"
+    except:
+        return "正常", "−"
+
+
+
+def fa_full_analysis(code, name, df):
+    df60 = fa_get_data(resolve_ticker(code), "60m", "60d")
+    df5  = fa_get_data(resolve_ticker(code), "5m",  "5d")
+    time.sleep(0.2)
+
+    df, _patched = fa_patch_daily_with_60m(df, df60)
+    if _patched:
+        df = fa_add_ma(df)
+
+    wave_info         = fa_analyze_60m(df60)
+    pressure, support = fa_merge_sr(df)
+    c                 = round(float(df["Close"].iloc[-1]), 2)
+    stop, stop_basis  = fa_calc_smart_stoploss(df)
+    ma_in, ma_str     = fa_calc_ma_inertia(df)
+    long_tr, long_ok  = fa_check_long_term_trend(df)
+    new_high, _       = fa_check_new_high(df)
+    tower_sig, tower_note, hold_days = fa_calc_tower_signal(df)
+    tmr               = fa_get_tomorrow_signal(df, df5)
+
+    rev_flag, rev_low, rev_txt = fa_detect_reversal_candle(df)
+    if rev_flag and rev_low and fa_round_price(rev_low * 0.99) < c:
+        stop, stop_basis = fa_round_price(rev_low * 0.99), "關鍵反轉K低點"
+
+    m60_info = fa_analyze_60m_detail(df60)
+    day_info = fa_analyze_today_candle(df)
+
+    r1v, r2v = pressure[0], pressure[1]
+    tgt_cand = [v for v in [r1v, r2v] if isinstance(v, (int, float)) and v > c * 1.03]
+    if tgt_cand:
+        target = fa_round_price(min(tgt_cand))
+    elif wave_info["target"]:
+        target = wave_info["target"]
+    else:
+        target = "−"
+
+    if len(df) >= 3:
+        entry_ref = fa_round_price(max(float(df["Close"].iloc[-2]), float(df["Close"].iloc[-3])))
+    else:
+        entry_ref = c
+    if tower_sig in ("持有", "買訊"):
+        entry_ref = c
+    rr = None
+    try:
+        if isinstance(target, (int, float)) and target > entry_ref > stop:
+            risk = entry_ref - stop; reward = target - entry_ref
+            if risk > 0: rr = round(reward / risk, 1)
+    except Exception:
+        pass
+
+    return {"code": code, "name": name, "close": c, "stop": stop, "stop_basis": stop_basis,
+            "entry": entry_ref, "rr": rr, "df": df,
+            "data_date": pd.Timestamp(df.index[-1]).strftime("%Y-%m-%d"),
+            "ma_in": ma_in, "ma_str": ma_str, "long_tr": long_tr, "new_high": new_high,
+            "pressure": pressure, "support": support,
+            "wave_pos": wave_info["wave_pos"], "pullback": wave_info["pullback"],
+            "target": target, "tower_sig": tower_sig, "tower_note": tower_note,
+            "hold_days": hold_days, "rev": (rev_flag, rev_low, rev_txt),
+            "m60": m60_info, "day": day_info, "tmr": tmr}
+
+# ================= 五段式持股分析（自 V28 移植，fa_ 前綴避免撞名）=================
+def fa_run(stock_id, name=""):
+    ticker = resolve_ticker(stock_id)
+    df = fa_get_data(ticker, "1d", "1y")
+    if df is None or len(df) < 22:
+        return None
+    df = fa_add_ma(df)
+    r = fa_full_analysis(stock_id, name or stock_id, df)
+    df2 = r["df"]
+    try:
+        r["fb_st"], _ = fa_check_false_breakdown(df2)
+    except Exception:
+        r["fb_st"] = "正常"
+    weekly = fa_analyze_weekly_env(df2)
+    sr = fa_build_sr_labeled(df2, rev_low=(r["rev"][1] if r["rev"][0] else None))
+    five = fa_build_five_sections(r, df2, weekly, sr)
+    return {
+        "id": stock_id, "name": name, "close": r["close"],
+        "sig": r["tower_sig"], "hold_days": r["hold_days"],
+        "stop": r["stop"], "stop_basis": r["stop_basis"],
+        "target": r["target"], "rr": r["rr"], "five": five,
+    }
+
+@app.route('/api/five', methods=['GET'])
+def api_five():
+    sid = (request.args.get('id') or '').strip().upper()
+    nm  = (request.args.get('name') or '').strip()
+    if not sid:
+        return _no_cache(jsonify({"ok": False, "error": "缺少代號"}))
+    try:
+        res = fa_run(sid, nm)
+        if not res:
+            return _no_cache(jsonify({"ok": False, "error": "資料不足，無法分析"}))
+        return _no_cache(jsonify(_clean({"ok": True, **res})))
+    except Exception as e:
+        return _no_cache(jsonify({"ok": False, "error": str(e)}))
 
 
 @app.route('/')

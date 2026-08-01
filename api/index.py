@@ -653,7 +653,7 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.3</span></div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.4</span></div>
     <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" onclick="toggleSigHelp()">❔ 說明</button>
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
@@ -1281,6 +1281,7 @@ async function scan(gi){
     }
     groups[gi].stocks = sortBySignal(groups[gi].stocks);
     groups[gi].lastUpdate='更新：'+ts(); sgr(); saveSigs();
+    if(!window._autoScanning) saveSnapshotSilent();  // 手動掃完 → 快照上雲，其他設備直接用
   }catch(e){
     setBtn('✗ 查詢失敗',true);
     setTimeout(()=>{setBtn('⚡ 掃描',false);},3000);
@@ -1304,9 +1305,10 @@ async function wakeServer(){
   return false;
 }
 
-async function autoScan(){
+async function autoScanGroups(idxList){
   await wakeServer();  // 先確保伺服器醒著，第一組（持股）才不會白白失敗
-  for(let i=0;i<8;i++){
+  window._autoScanning=true;
+  for(const i of idxList){
     if(groups[i].stocks&&groups[i].stocks.length>0){
       cur=i; render();
       let ok=false;
@@ -1318,6 +1320,8 @@ async function autoScan(){
       }
     }
   }
+  window._autoScanning=false;
+  saveSnapshotSilent();  // 全部掃完 → 一次把快照上雲
   // 掃描完後，如果在特殊群組頁則重新渲染
   if(cur<8) {
     cur=groups.findIndex(g=>g.stocks&&g.stocks.length>0);
@@ -1326,25 +1330,53 @@ async function autoScan(){
   render();
 }
 
-async function saveCloud(){
-  const btn=document.getElementById('btnSave');
-  btn.textContent='儲存中…'; btn.disabled=true;
+async function autoScan(){
+  await autoScanGroups([0,1,2,3,4,5,6,7]);
+}
+
+// ── 組出要上雲的資料列：自選清單 + 分頁順序 + 掃描快照（代號98，舊版載入會自動略過）──
+function buildSyncRows(includeSnap){
   const rows=[];
   groups.slice(0,8).forEach((g,gi)=>{
     if(g.stocks&&g.stocks.length>0) g.stocks.forEach(s=>rows.push([gi,g.name,s.id]));
     else rows.push([gi,g.name,'']);
   });
-  // 分頁順序一併上雲（特殊列：代號99，載入端0-7的過濾會自動略過，向下相容）
   rows.push([99,'TABORDER',loadTabOrder().join(',')]);
+  if(includeSnap){
+    const hasData=groups.slice(0,8).some(g=>(g.stocks||[]).some(s=>s.daily));
+    if(hasData){
+      const snap={t:Date.now(),g:groups.slice(0,8).map(g=>({
+        name:g.name,lastUpdate:g.lastUpdate||'',stocks:g.stocks||[]}))};
+      const str=JSON.stringify(snap);
+      const CH=40000;  // Google Sheet 單格上限5萬字，切4萬保險
+      for(let i=0;i*CH<str.length;i++){
+        rows.push([98,'SNAP#'+i,str.slice(i*CH,(i+1)*CH)]);
+      }
+    }
+  }
+  return rows;
+}
+async function _pushSync(rows){
+  const res=await fetch('/api/sync-save',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({payload:rows})
+  });
+  return await res.json();
+}
+
+async function saveCloud(){
+  const btn=document.getElementById('btnSave');
+  btn.textContent='儲存中…'; btn.disabled=true;
   try{
-    const res=await fetch('/api/sync-save',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({payload:rows})
-    });
-    const j=await res.json();
+    const j=await _pushSync(buildSyncRows(true));
     btn.textContent=j.ok?'✓ 已儲存':'✗ 失敗';
   }catch(e){btn.textContent='✗ 失敗';}
   setTimeout(()=>{btn.textContent='↑ 存雲端';btn.disabled=false;},2000);
+}
+
+// 掃描完自動把快照上雲（背景執行，不打擾操作；失敗就算了，下次掃描再存）
+async function saveSnapshotSilent(){
+  try{ await _pushSync(buildSyncRows(true)); }catch(e){}
 }
 
 async function loadCloud(){
@@ -1370,13 +1402,43 @@ async function loadCloud(){
       const o=[...new Set(String(tor[2]).split(',').map(x=>parseInt(x)).filter(x=>Number.isInteger(x)&&x>=0))];
       if(o.length) saveTabOrder(o);  // loadTabOrder() 讀取時會自動剔除無效值、補齊缺漏
     }
+    // ── 還原掃描快照（代號98）：其他設備掃過的資料直接拿來用，不用重掃 ──
+    let snap=null;
+    try{
+      const chunks=rows.filter(r=>parseInt(r[0])===98 && String(r[1]||'').startsWith('SNAP#'))
+        .sort((a,b)=>parseInt(String(a[1]).slice(5))-parseInt(String(b[1]).slice(5)))
+        .map(r=>String(r[2]||''));
+      if(chunks.length) snap=JSON.parse(chunks.join(''));
+    }catch(e){ snap=null; }
+    if(snap && snap.g){
+      // 全域 id→資料 對照（股票被移到別的群組也找得到）
+      const byId={};
+      snap.g.forEach(sg=>(sg.stocks||[]).forEach(s=>{ if(s&&s.id) byId[s.id]=s; }));
+      ng.forEach((g,gi)=>{
+        const sg=snap.g[gi]||{};
+        const gMap={};
+        (sg.stocks||[]).forEach(s=>{ if(s&&s.id) gMap[s.id]=s; });
+        g.stocks=g.stocks.map(s=> gMap[s.id]||byId[s.id]||s );
+        if(sg.lastUpdate) g.lastUpdate=sg.lastUpdate;
+      });
+    }
     groups=ng; sgr(); 
     // 強制清掉舊版 key，避免下次讀到過期資料
     localStorage.removeItem('ga_g_v4');
     render();
     btn.textContent='✓ 已載入';
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},1500);
-    setTimeout(()=>autoScan(),10000);
+    // ── 智慧補掃：只掃「有股票缺資料」的群組（例如別台新增的）；快照齊全就完全不掃 ──
+    const need=[];
+    groups.slice(0,8).forEach((g,gi)=>{
+      if((g.stocks||[]).length>0 && g.stocks.some(s=>!s.daily)) need.push(gi);
+    });
+    if(!snap){
+      setTimeout(()=>autoScan(),10000);            // 雲端沒有快照（第一次用）→ 照舊全掃
+    }else if(need.length>0){
+      setTimeout(()=>autoScanGroups(need),4000);   // 只補掃缺的群組，掃完自動更新快照
+    }
+    // need 為空 → 資料齊全，直接顯示，一支都不用重掃
   }catch(e){
     btn.textContent='✗ '+(e.message||'失敗'); btn.disabled=false;
     setTimeout(()=>{btn.textContent='⬇ 載雲端';btn.disabled=false;},3000);

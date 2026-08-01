@@ -252,6 +252,10 @@ def get_signals(stock_id):
         new_high_10 = False
         if len(close_d) >= 10:
             new_high_10 = float(price) >= float(close_d.iloc[-10:].max())
+        # v6.6：創10日新低（空方對稱訊號）
+        new_low_10 = False
+        if len(close_d) >= 10:
+            new_low_10 = float(price) <= float(close_d.iloc[-10:].min())
 
         df_w = yf.download(ticker, period="60wk", interval="1wk", auto_adjust=True, progress=False)
         if df_w.empty or len(df_w) < 5:
@@ -289,6 +293,33 @@ def get_signals(stock_id):
                 return abs(p - ma) / ma <= 0.03
             return False
 
+        # ── v6.5：均線方向（上揚/下彎/走平）──
+        # 「回踩買點」只在均線上揚時成立；下彎的均線是反壓，不是支撐。
+        def _ma_dir(series, w, lag):
+            try:
+                m = series.rolling(w).mean()
+                if len(m) < w + lag:
+                    return 'flat'
+                a = float(m.iloc[-1]); b = float(m.iloc[-1 - lag])
+                if pd.isna(a) or pd.isna(b) or b == 0:
+                    return 'flat'
+                chg = (a - b) / b * 100
+                if chg > 0.1:  return 'up'
+                if chg < -0.1: return 'down'
+                return 'flat'
+            except Exception:
+                return 'flat'
+        ma5_dir   = _ma_dir(close_d, 5, 3)
+        ma10_dir  = _ma_dir(close_d, 10, 3)
+        ma20_dir  = _ma_dir(close_d, 20, 5)
+        ma60d_dir = _ma_dir(close_d, 60, 5)
+        ma60_dir  = 'flat'
+        try:
+            if c60 is not None and len(c60) >= 32:
+                ma60_dir = _ma_dir(c60, min(240, len(c60) - 12), 12)
+        except Exception:
+            pass
+
 
         return {
             'price':      price,
@@ -300,14 +331,17 @@ def get_signals(stock_id):
             'ma20':       ma20,
             'ma60d':      ma60d,
             'ma60k240':   ma60k240,
-            'near_ma5':   near(price, ma5),
-            'near_ma10':  near(price, ma10),
-            'near_ma20':  near(price, ma20),
-            'near_ma60d': near(price, ma60d),
-            'near_ma60':  near(price, ma60k240),
+            'near_ma5':   near(price, ma5)      and ma5_dir   == 'up',
+            'near_ma10':  near(price, ma10)     and ma10_dir  == 'up',
+            'near_ma20':  near(price, ma20)     and ma20_dir  == 'up',
+            'near_ma60d': near(price, ma60d)    and ma60d_dir == 'up',
+            'near_ma60':  near(price, ma60k240) and ma60_dir  == 'up',
+            'ma5_dir': ma5_dir, 'ma10_dir': ma10_dir, 'ma20_dir': ma20_dir,
+            'ma60d_dir': ma60d_dir, 'ma60_dir': ma60_dir,
             'daily':      {'signal': d_signal, 'action': d_action, 'days': d_days},
             'yesterday':  {'signal': y_signal, 'action': y_action},
             'new_high_10': new_high_10,
+            'new_low_10':  new_low_10,
             'weekly':     {'signal': w_signal, 'action': w_action, 'days': w_days},
         }
     except:
@@ -653,7 +687,7 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.4</span></div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.6</span></div>
     <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" onclick="toggleSigHelp()">❔ 說明</button>
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
@@ -714,7 +748,7 @@ html, body {
       <div class="sig-combo"><b>日賣出 ＋ 週賣出</b>：短線與波段同步轉弱，果斷出場不留戀。</div>
       <div class="sig-combo"><b>日買進 ＋ 週賣出</b>：波段仍偏空、只是短線反彈，追高要小心。</div>
 
-      <div class="sig-foot">訊號用「2 日高低點突破」計算：日線看日收盤、週線看週收盤，各自獨立判斷。盤中未收盤的 K 棒不列入計算。</div>
+      <div class="sig-foot">訊號用「2 日高低點突破」計算：日線看日收盤、週線看週收盤，各自獨立判斷。盤中未收盤的 K 棒不列入計算。<br><br>均線標記：↗ 上揚、➡ 走平、↘ 下彎。😊 ＝ 股價接近「上揚中」的均線（3%內）＝支撐、回踩買點；⚠ ＝ 股價貼近「下彎中」的均線＝壓力、反彈減碼點。均線上揚是支撐、下彎是壓力，評分同時計算多方與空方條件（空頭排列、季線下彎、創10日新低皆會扣分）。</div>
     </div>
   </div>
 </div>
@@ -752,15 +786,16 @@ function allGroups() {
     { name:'持有訊號', stocks:[], special:'hold' },
     { name:'空手訊號', stocks:[], special:'idle' },
     { name:'訊號異動', stocks:[], special:'change' },
-    { name:'5日線買點', stocks:[], special:'near5' },
-    { name:'10日線買點', stocks:[], special:'near10' },
-    { name:'月線買點', stocks:[], special:'near20' },
-    { name:'季線買點', stocks:[], special:'near60' },
+    { name:'5日線支撐', stocks:[], special:'near5' },
+    { name:'10日線支撐', stocks:[], special:'near10' },
+    { name:'月線支撐', stocks:[], special:'near20' },
+    { name:'季線支撐', stocks:[], special:'near60' },
     { name:'回踩買點', stocks:[], special:'down' },
     { name:'創新高',   stocks:[], special:'newhigh' },
     { name:'週持日買', stocks:[], special:'whold_dbuy' },
     { name:'週買進',   stocks:[], special:'wbuy' },
     { name:'週賣出',   stocks:[], special:'wsell' },
+    { name:'均線反壓', stocks:[], special:'press' },
   ];
 }
 function sgr() { localStorage.setItem(GK,JSON.stringify(groups)); }
@@ -881,13 +916,13 @@ function calcScore(s) {
   const swR = [], shR = [];
 
   // ── 波段強度分 ──────────────────────────────
-  // 1. 週線訊號 (25分)
+  // 1. 週線訊號 (25分)（v6.6：賣出扣分加重，多空對稱）
   if      (wA==='買進') { sw+=25; swR.push('週線買進'); }
   else if (wA==='持有') {
     const pts = wD<=4 ? 20 : wD<=10 ? 18 : wD<=20 ? 15 : 12;
     sw+=pts; swR.push(`週線持有${wD}週`);
   }
-  else if (wA==='賣出') { sw-=8;  swR.push('週線賣出'); }
+  else if (wA==='賣出') { sw-=15; swR.push('週線賣出，波段轉空'); }
   // 空手：0分
 
   // 2. 日線訊號 (20分)
@@ -896,11 +931,13 @@ function calcScore(s) {
     const pts = dD<=3 ? 16 : dD<=7 ? 14 : dD<=15 ? 12 : 10;
     sw+=pts; swR.push(`日線持有${dD}天`);
   }
-  else if (dA==='賣出') { sw-=8;  swR.push('日線賣出'); }
+  else if (dA==='賣出') { sw-=12; swR.push('日線賣出'); }
 
   // 3. 均線多頭排列 (20分)
   if (s.ma5 && s.ma20 && s.ma60d) {
-    if (s.price > s.ma5 && s.ma5 > s.ma20 && s.ma20 > s.ma60d) {
+    if (s.price < s.ma5 && s.ma5 < s.ma20 && s.ma20 < s.ma60d) {
+      sw-=18; swR.push('均線完整空排，趨勢向下');   // v6.6：空頭排列對稱扣分
+    } else if (s.price > s.ma5 && s.ma5 > s.ma20 && s.ma20 > s.ma60d) {
       sw+=20; swR.push('均線完整多排');
     } else if (s.price > s.ma5 && s.ma5 > s.ma20) {
       sw+=13; swR.push('MA5>MA20多排');
@@ -913,6 +950,12 @@ function calcScore(s) {
     if (s.price > s.ma5 && s.ma5 > s.ma20) { sw+=10; swR.push('MA5>MA20多排'); }
     else if (s.price > s.ma20)              { sw+=5;  swR.push('站上MA20'); }
   }
+
+  // 3b. 均線方向（v6.6）：季線＝中期趨勢的方向盤，月線＝波段方向
+  if      (s.ma60d_dir==='up')   { sw+=8;  swR.push('季線上揚'); }
+  else if (s.ma60d_dir==='down') { sw-=12; swR.push('季線下彎，中期趨勢向下'); }
+  if      (s.ma20_dir==='down')  { sw-=8;  swR.push('月線下彎'); }
+  else if (s.ma20_dir==='up')    { sw+=5;  swR.push('月線上揚'); }
 
   // 4. 週日線共振加成 (10分)
   if ((wA==='買進'||wA==='持有') && (dA==='買進'||dA==='持有')) {
@@ -951,15 +994,23 @@ function calcScore(s) {
     sh+=15; shR.push('買進訊號中');
   }
 
-  // 2. 均線買點回踩 (25分)
+  // 2. 均線買點回踩 (25分)——後端已把「買點」限定為上揚均線的回踩；下彎均線不會觸發
   let nearPts = 0, nearLbl = '';
-  if (s.near_ma5)  { nearPts=Math.max(nearPts,10); nearLbl='已接近5日線買點'; }
-  if (s.near_ma10) { nearPts=Math.max(nearPts,14); nearLbl='已接近10日線買點'; }
-  if (s.near_ma20) { nearPts=Math.max(nearPts,18); nearLbl='已接近月線買點'; }
-  if (s.near_ma60d){ nearPts=Math.max(nearPts,25); nearLbl='已接近季線買點'; }
+  if (s.near_ma5)  { nearPts=Math.max(nearPts,10); nearLbl='回踩5日線支撐（線上揚）'; }
+  if (s.near_ma10) { nearPts=Math.max(nearPts,14); nearLbl='回踩10日線支撐（線上揚）'; }
+  if (s.near_ma20) { nearPts=Math.max(nearPts,18); nearLbl='回踩月線支撐（線上揚）'; }
+  if (s.near_ma60d){ nearPts=Math.max(nearPts,25); nearLbl='回踩季線支撐（線上揚）'; }
   if (nearLbl) {
     if (dA==='買進'||dA==='持有') sh+=nearPts;  // 加分維持原規則
     shR.push(nearLbl);  // 文字提示：只要接近均線就顯示
+  }
+  // 2b. 下彎均線反壓：價格貼近「上方且下彎」的均線＝撞牆不是買點，扣分提醒
+  {
+    const nr=(p,m)=>p&&m&&Math.abs(p-m)/m<=0.03;
+    const pr=[['5日線',s.ma5,s.ma5_dir],['10日線',s.ma10,s.ma10_dir],
+              ['月線',s.ma20,s.ma20_dir],['季線',s.ma60d,s.ma60d_dir]]
+              .find(x=>x[2]==='down'&&x[1]>s.price&&nr(s.price,x[1]));
+    if(pr){ sh-=8; shR.push('上方'+pr[0]+'下彎反壓，慎防假突破'); }
   }
 
   // 3. 今日漲跌幅表現 (15分)
@@ -972,8 +1023,9 @@ function calcScore(s) {
     else               { sh-=10; shR.push(`今日大跌${pct.toFixed(1)}%`); }
   }
 
-  // 4. 創10日新高 (15分)
+  // 4. 創10日新高 (15分)／創10日新低（v6.6 空方對稱：-15分）
   if (s.new_high_10) { sh+=15; shR.push('創10日新高'); }
+  if (s.new_low_10)  { sh-=15; shR.push('創10日新低，短線弱勢'); }
 
   // 5. 持有中今日下跌：短線警示
   if (dA==='持有' && s.price && s.prev_price && s.price < s.prev_price) {
@@ -1020,7 +1072,7 @@ function renderSpecial(type) {
   renderTabs();
   const titles = {
     'buy':'買進訊號','sell':'賣出訊號','hold':'持有訊號','idle':'空手訊號',
-    'change':'訊號異動','near5':'5日線買點','near10':'10日線買點','near20':'月線買點','near60':'季線買點','down':'回踩買點','newhigh':'創新高',
+    'change':'訊號異動','near5':'5日線支撐','near10':'10日線支撐','near20':'月線支撐','near60':'季線支撐','press':'均線反壓','down':'回踩買點','newhigh':'創新高',
     'whold_dbuy':'週持有＋日買進','wbuy':'週線買進','wsell':'週線賣出'
   };
   const title = titles[type] || type;
@@ -1053,6 +1105,11 @@ function renderSpecial(type) {
         if (s.near_ma20) { matched.push(s); seen.add(s.id); }
       } else if (type==='near60') {
         if (s.near_ma60d) { matched.push(s); seen.add(s.id); }
+      } else if (type==='press') {
+        const nr=(p,m)=>p&&m&&Math.abs(p-m)/m<=0.03;
+        const hit=[[s.ma5,s.ma5_dir],[s.ma10,s.ma10_dir],[s.ma20,s.ma20_dir],[s.ma60d,s.ma60d_dir]]
+          .some(x=>x[1]==='down'&&x[0]>s.price&&nr(s.price,x[0]));
+        if (hit) { matched.push(s); seen.add(s.id); }
       } else if (type==='down') {
         const isDown = s.daily.action==='持有' && s.prev_price && s.price < s.prev_price;
         if (isDown) { matched.push(s); seen.add(s.id); }
@@ -1110,6 +1167,7 @@ function render(){
   if(cur === 19){ renderSpecial('whold_dbuy'); return; }
   if(cur === 20){ renderSpecial('wbuy');    return; }
   if(cur === 21){ renderSpecial('wsell');   return; }
+  if(cur === 22){ renderSpecial('press');   return; }
   const g=groups[cur];
   let h=`
   <div class="grp-bar">
@@ -1151,8 +1209,13 @@ function rc(s,gi,si,readonly=false){
   const d=s.daily, w=s.weekly||{action:'空手',days:0};
   const dtag=`<span class="tg ${tgCls(d.action)}">日 ${d.action}${d.days>0?' '+d.days+'天':''}</span>`;
   const wtag=`<span class="tg ${tgCls(w.action)}">週 ${w.action}${w.days>0?' '+w.days+'週':''}</span>`;
-  const ma=(val,lbl,p,near)=> val
-    ? `<span>${lbl} <b class="${maColor(p,val)}">${val}${near?' 😊':''}</b></span>`
+  const dirMark=(d)=> d==='up'   ? '<span style="color:#ff6b6b;font-size:13px;font-weight:900">↗</span>'
+                    : d==='down' ? '<span style="color:#35c46f;font-size:13px;font-weight:900">↘</span>'
+                    : d==='flat' ? '<span style="color:#8aa4c0;font-size:12px;font-weight:900">➡</span>' : '';
+  // 😊＝接近上揚均線（支撐、回踩買點）；⚠＝接近下彎均線（壓力、反彈減碼點）
+  const nearPress=(p,v,d)=> p&&v&&d==='down'&&Math.abs(p-v)/v<=0.03;
+  const ma=(val,lbl,p,near,dir)=> val
+    ? `<span>${lbl} <b class="${maColor(p,val)}">${val}${dirMark(dir)}${near?' 😊':(nearPress(p,val,dir)?' ⚠':'')}</b></span>`
     : `<span>${lbl} <b class="ma-na">—</b></span>`;
   const down = d.action==='持有' && s.prev_price && s.price < s.prev_price;
   let chgHtml='';
@@ -1180,11 +1243,11 @@ function rc(s,gi,si,readonly=false){
       ${s.prev_price?`<span style="color:#caa84a">昨日收 <b style="color:#ffd60a;font-weight:800">${s.prev_price}</b></span>`:''}
     </div>
     <div class="card-meta ma-meta">
-      ${ma(s.ma5,'MA5',s.price,s.near_ma5)}
-      ${ma(s.ma10,'MA10',s.price,s.near_ma10)}
-      ${ma(s.ma20,'MA20',s.price,s.near_ma20)}
-      ${ma(s.ma60d,'MA60',s.price,s.near_ma60d)}
-      ${ma(s.ma60k240,'60MA240',s.price,s.near_ma60)}
+      ${ma(s.ma5,'MA5',s.price,s.near_ma5,s.ma5_dir)}
+      ${ma(s.ma10,'MA10',s.price,s.near_ma10,s.ma10_dir)}
+      ${ma(s.ma20,'MA20',s.price,s.near_ma20,s.ma20_dir)}
+      ${ma(s.ma60d,'MA60',s.price,s.near_ma60d,s.ma60d_dir)}
+      ${ma(s.ma60k240,'60MA240',s.price,s.near_ma60,s.ma60_dir)}
     </div>
     ${(()=>{
       const sc=calcScore(s);
@@ -1265,8 +1328,11 @@ async function scan(gi){
         s.price=r.price; s.prev_price=r.prev_price; s.prev2_price=r.prev2_price;
         s.ma5=r.ma5; s.ma10=r.ma10; s.ma20=r.ma20; s.ma60d=r.ma60d; s.ma60k240=r.ma60k240;
         s.near_ma5=r.near_ma5; s.near_ma10=r.near_ma10;
+        s.ma5_dir=r.ma5_dir; s.ma10_dir=r.ma10_dir; s.ma20_dir=r.ma20_dir;
+        s.ma60d_dir=r.ma60d_dir; s.ma60_dir=r.ma60_dir;
         s.near_ma20=r.near_ma20; s.near_ma60d=r.near_ma60d; s.near_ma60=r.near_ma60;
         s.daily=r.daily; s.weekly=r.weekly; s.yesterday=r.yesterday; s.new_high_10=r.new_high_10;
+        s.new_low_10=r.new_low_10;
         s.name=r.name||'';
         hs.push({id:s.id,price:r.price,daily:r.daily,weekly:r.weekly});
       }

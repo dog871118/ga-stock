@@ -687,7 +687,7 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.6</span></div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v6.7</span></div>
     <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" onclick="toggleSigHelp()">❔ 說明</button>
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
@@ -996,10 +996,12 @@ function calcScore(s) {
 
   // 2. 均線買點回踩 (25分)——後端已把「買點」限定為上揚均線的回踩；下彎均線不會觸發
   let nearPts = 0, nearLbl = '';
-  if (s.near_ma5)  { nearPts=Math.max(nearPts,10); nearLbl='回踩5日線支撐（線上揚）'; }
-  if (s.near_ma10) { nearPts=Math.max(nearPts,14); nearLbl='回踩10日線支撐（線上揚）'; }
-  if (s.near_ma20) { nearPts=Math.max(nearPts,18); nearLbl='回踩月線支撐（線上揚）'; }
-  if (s.near_ma60d){ nearPts=Math.max(nearPts,25); nearLbl='回踩季線支撐（線上揚）'; }
+  // v6.7：必須同時有方向欄位＝'up' 才能宣稱支撐——舊版掃描殘留的資料沒有方向欄位，
+  // 其 near 旗標不看均線方向、不可信，一律不做方向性宣稱
+  if (s.near_ma5  && s.ma5_dir==='up')   { nearPts=Math.max(nearPts,10); nearLbl='回踩5日線支撐（線上揚）'; }
+  if (s.near_ma10 && s.ma10_dir==='up')  { nearPts=Math.max(nearPts,14); nearLbl='回踩10日線支撐（線上揚）'; }
+  if (s.near_ma20 && s.ma20_dir==='up')  { nearPts=Math.max(nearPts,18); nearLbl='回踩月線支撐（線上揚）'; }
+  if (s.near_ma60d&& s.ma60d_dir==='up') { nearPts=Math.max(nearPts,25); nearLbl='回踩季線支撐（線上揚）'; }
   if (nearLbl) {
     if (dA==='買進'||dA==='持有') sh+=nearPts;  // 加分維持原規則
     shR.push(nearLbl);  // 文字提示：只要接近均線就顯示
@@ -1032,10 +1034,13 @@ function calcScore(s) {
     sh-=8; shR.push('持有中拉回留意');
   }
 
-  // 6. 噴出辨識：連買 + 強漲 (加分但也要注意過熱)
+  // 6. 噴出辨識（v6.7）：強漲必須有趨勢脈絡——創10日新高、或站上「上揚中」的月線。
+  // 跌深後單日反彈（如跌一個月後的漲停）是搶反彈，不是噴出，不能誤導追價
   if (dA==='買進' && s.price && s.prev_price) {
     const pct = (s.price / s.prev_price - 1) * 100;
-    if (pct > 2) { sh+=10; shR.push('噴出特徵'); }
+    const ctx = s.new_high_10 || (s.ma20 && s.price > s.ma20 && s.ma20_dir==='up');
+    if (pct > 2 && ctx)      { sh+=10; shR.push('噴出特徵'); }
+    else if (pct > 5 && !ctx){ shR.push('跌深反彈，追價風險高'); }
   }
 
   // 7. 大盤短線溫度加權 (10分)
@@ -1098,13 +1103,13 @@ function renderSpecial(type) {
       } else if (type==='idle') {
         if (s.daily.action==='空手') { matched.push(s); seen.add(s.id); }
       } else if (type==='near5') {
-        if (s.near_ma5) { matched.push(s); seen.add(s.id); }
+        if (s.near_ma5 && s.ma5_dir==='up') { matched.push(s); seen.add(s.id); }
       } else if (type==='near10') {
-        if (s.near_ma10) { matched.push(s); seen.add(s.id); }
+        if (s.near_ma10 && s.ma10_dir==='up') { matched.push(s); seen.add(s.id); }
       } else if (type==='near20') {
-        if (s.near_ma20) { matched.push(s); seen.add(s.id); }
+        if (s.near_ma20 && s.ma20_dir==='up') { matched.push(s); seen.add(s.id); }
       } else if (type==='near60') {
-        if (s.near_ma60d) { matched.push(s); seen.add(s.id); }
+        if (s.near_ma60d && s.ma60d_dir==='up') { matched.push(s); seen.add(s.id); }
       } else if (type==='press') {
         const nr=(p,m)=>p&&m&&Math.abs(p-m)/m<=0.03;
         const hit=[[s.ma5,s.ma5_dir],[s.ma10,s.ma10_dir],[s.ma20,s.ma20_dir],[s.ma60d,s.ma60d_dir]]
@@ -1215,7 +1220,7 @@ function rc(s,gi,si,readonly=false){
   // 😊＝接近上揚均線（支撐、回踩買點）；⚠＝接近下彎均線（壓力、反彈減碼點）
   const nearPress=(p,v,d)=> p&&v&&d==='down'&&Math.abs(p-v)/v<=0.03;
   const ma=(val,lbl,p,near,dir)=> val
-    ? `<span>${lbl} <b class="${maColor(p,val)}">${val}${dirMark(dir)}${near?' 😊':(nearPress(p,val,dir)?' ⚠':'')}</b></span>`
+    ? `<span>${lbl} <b class="${maColor(p,val)}">${val}${dirMark(dir)}${(near&&dir==='up')?' 😊':(nearPress(p,val,dir)?' ⚠':'')}</b></span>`
     : `<span>${lbl} <b class="ma-na">—</b></span>`;
   const down = d.action==='持有' && s.prev_price && s.price < s.prev_price;
   let chgHtml='';
@@ -1497,7 +1502,8 @@ async function loadCloud(){
     // ── 智慧補掃：只掃「有股票缺資料」的群組（例如別台新增的）；快照齊全就完全不掃 ──
     const need=[];
     groups.slice(0,8).forEach((g,gi)=>{
-      if((g.stocks||[]).length>0 && g.stocks.some(s=>!s.daily)) need.push(gi);
+      // v6.7：沒掃過(!daily) 或 是舊版掃的(!ma5_dir，缺均線方向) → 都要補掃
+      if((g.stocks||[]).length>0 && g.stocks.some(s=>!s.daily || !s.ma5_dir)) need.push(gi);
     });
     if(!snap){
       setTimeout(()=>autoScan(),10000);            // 雲端沒有快照（第一次用）→ 照舊全掃

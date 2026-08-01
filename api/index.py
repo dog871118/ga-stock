@@ -1340,7 +1340,7 @@ function renderFiveHtml(d){
   const f=d.five||{};
   const C='#38bdf8';
   const sec=(t,body)=> body
-    ? `<div class="fv-sec"><div class="fv-t" style="color:${C}">${t}</div><div class="fv-b">${String(body).replace(/\n/g,'<br>')}</div></div>`
+    ? `<div class="fv-sec"><div class="fv-t" style="color:${C}">${t}</div><div class="fv-b">${String(body).split(String.fromCharCode(10)).join("<br>")}</div></div>`
     : '';
   const rr = d.rr!=null ? `　風報比 1:${d.rr}` : '';
   return `<div class="fv-head">${d.name||''} ${d.id}　收盤 <b style="color:#ffd60a">${d.close}</b>　`

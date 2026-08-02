@@ -695,10 +695,12 @@ html, body {
 .dash-wrap{padding:8px 10px 84px;max-width:540px;margin:0 auto;}
 .dash-sec{margin-bottom:20px;}
 .dash-sec-h{font-size:14px;font-weight:800;padding:6px 2px 8px;border-bottom:2px solid;margin-bottom:6px;}
-.dash-cat{display:flex;align-items:center;gap:8px;margin:11px 2px 5px;}
-.dash-cat-t{font-size:12.5px;color:#cdd9e5;font-weight:700;}
-.dash-cat-n{font-size:11px;color:#0d1b2a;background:#7aa8d0;border-radius:10px;padding:1px 8px;font-weight:800;}
-.dash-mini{display:flex;flex-direction:column;gap:3px;}
+.dash-cat{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 2px 2px;padding:9px 11px;background:rgba(56,189,248,.06);border-radius:7px;cursor:pointer;user-select:none;}
+.dash-cat:active{background:rgba(56,189,248,.16);}
+.dash-cat.open{background:rgba(56,189,248,.11);}
+.dash-cat-t{font-size:13px;color:#cdd9e5;font-weight:700;}
+.dash-cat-n{font-size:11px;color:#0d1b2a;background:#7aa8d0;border-radius:10px;padding:1px 9px;font-weight:800;}
+.dash-mini{display:flex;flex-direction:column;gap:3px;margin:3px 2px 8px;}
 .dmini{display:grid;grid-template-columns:50px 1fr 58px 52px 52px 52px;gap:4px;align-items:center;padding:7px 8px;background:rgba(56,189,248,.05);border-radius:6px;font-size:12.5px;cursor:pointer;}
 .dmini:active{background:rgba(56,189,248,.16);}
 .dm-id{color:#38bdf8;font-weight:700;}
@@ -725,7 +727,7 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v7.0</span></div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v7.1</span></div>
     <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" onclick="toggleSigHelp()">❔ 說明</button>
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
@@ -3920,8 +3922,9 @@ function renderDashboard(){
         const list=sortBySignal(filterSpecial(type));
         if(list.length===0) return;
         total+=list.length;
-        block+=`<div class="dash-cat"><span class="dash-cat-t">▎${label}</span><span class="dash-cat-n">${list.length}</span></div>`;
-        block+='<div class="dash-mini">'+list.map(s=>dashMini(s)).join('')+'</div>';
+        const catId='cat_'+type;
+        block+=`<div class="dash-cat" onclick="toggleCat('${catId}',this)"><span class="dash-cat-t">▸ ${label}</span><span class="dash-cat-n">${list.length}</span></div>`;
+        block+=`<div class="dash-mini" id="${catId}" style="display:none">`+list.map(s=>dashMini(s)).join('')+`</div>`;
       });
       if(block){
         h+=`<div class="dash-sec"><div class="dash-sec-h" style="color:${sec.color};border-color:${sec.color}">${sec.title}</div>${block}</div>`;
@@ -3931,6 +3934,16 @@ function renderDashboard(){
   }
   h+='</div>';
   document.getElementById('dashMain').innerHTML=h;
+}
+
+function toggleCat(id,el){
+  const box=document.getElementById(id);
+  if(!box) return;
+  const open = box.style.display!=='none';
+  box.style.display = open ? 'none' : 'flex';
+  const t = el.querySelector('.dash-cat-t');
+  if(t) t.textContent = (open?'▸':'▾') + t.textContent.slice(1);
+  el.classList.toggle('open', !open);
 }
 
 function gotoStock(id){

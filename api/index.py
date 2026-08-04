@@ -337,6 +337,7 @@ def get_signals(stock_id):
 
 
         return {
+            'data_date':  (close_d.index[-1].date().isoformat() if hasattr(close_d.index[-1], 'date') else str(close_d.index[-1])),
             'price':      price,
             'prev_price': prev_price,
             'prev2_price': prev2_price,
@@ -727,7 +728,7 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v7.1</span></div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v7.2</span></div>
     <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" onclick="toggleSigHelp()">❔ 說明</button>
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
@@ -1214,7 +1215,8 @@ function renderSpecial(type) {
 }
 
 function render(){
-  if(cur>=groups.length||cur<0) cur=0;  // 防呆：cur只在自選群組範圍
+  if(cur>=groups.length||cur<0) cur=0;
+  syncLatest();  // 防呆：cur只在自選群組範圍
   renderTabs();
   const g=groups[cur];
   let h=`
@@ -1415,7 +1417,7 @@ async function scan(gi){
         s.ma60d_dir=r.ma60d_dir; s.ma60_dir=r.ma60_dir;
         s.near_ma20=r.near_ma20; s.near_ma60d=r.near_ma60d; s.near_ma60=r.near_ma60;
         s.daily=r.daily; s.weekly=r.weekly; s.yesterday=r.yesterday; s.new_high_10=r.new_high_10;
-        s.new_low_10=r.new_low_10; s.vol_ratio=r.vol_ratio;
+        s.new_low_10=r.new_low_10; s.vol_ratio=r.vol_ratio; s.data_date=r.data_date;
         s.name=r.name||'';
         hs.push({id:s.id,price:r.price,daily:r.daily,weekly:r.weekly});
       }
@@ -3910,6 +3912,7 @@ function dashMini(s){
 }
 
 function renderDashboard(){
+  syncLatest();
   const anyData = groups.some(g=>(g.stocks||[]).some(s=>s.daily));
   let h='<div class="dash-wrap">';
   if(!anyData){
@@ -3934,6 +3937,25 @@ function renderDashboard(){
   }
   h+='</div>';
   document.getElementById('dashMain').innerHTML=h;
+}
+
+// 同一股票可能在多個群組、資料不同步 → 全部統一成「資料日期最新」的那份，
+// 讓自選各群組與總覽顯示同一個價格、同一套判斷，杜絕舊資料誤判（如錯誤的創新低）
+function syncLatest(){
+  const best={};
+  groups.forEach(g=>(g.stocks||[]).forEach(s=>{
+    if(!s||!s.id||!s.daily) return;
+    const b=best[s.id];
+    if(!b || String(s.data_date||'') > String(b.data_date||'')) best[s.id]=s;
+  }));
+  groups.forEach(g=>{
+    if(!g.stocks) return;
+    g.stocks.forEach((s,i)=>{
+      if(s&&s.id&&best[s.id]&&best[s.id]!==s){
+        g.stocks[i]=Object.assign({}, best[s.id], {id:s.id});
+      }
+    });
+  });
 }
 
 function toggleCat(id,el){

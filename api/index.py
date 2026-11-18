@@ -766,7 +766,7 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v7.4</span></div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v7.5</span></div>
     <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" onclick="toggleSigHelp()">❔ 說明</button>
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
@@ -1650,7 +1650,7 @@ async function loadCloud(){
     const need=[];
     groups.slice(0,10).forEach((g,gi)=>{
       // v6.7：沒掃過(!daily) 或 是舊版掃的(!ma5_dir，缺均線方向) → 都要補掃
-      if((g.stocks||[]).length>0 && g.stocks.some(s=>!s.daily || !s.ma5_dir)) need.push(gi);
+      if((g.stocks||[]).length>0 && g.stocks.some(s=>!s.daily || !s.ma5_dir || s.bb_mid===undefined)) need.push(gi);
     });
     if(!snap){
       setTimeout(()=>autoScan(),10000);            // 雲端沒有快照（第一次用）→ 照舊全掃

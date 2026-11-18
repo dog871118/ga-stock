@@ -238,6 +238,42 @@ def get_signals(stock_id):
         ma10  = round(float(close_d.iloc[-10:].mean()), 2) if len(close_d) >= 10 else None
         ma20  = round(float(close_d.iloc[-20:].mean()), 2) if len(close_d) >= 20 else None
         ma60d = round(float(close_d.iloc[-60:].mean()), 2) if len(close_d) >= 60 else None
+
+        # ── v7.3：布林通道（22日、2倍標準差；母體標準差，與看盤軟體一致）──
+        bb_up = bb_mid = bb_low = bb_pct = bb_bw = None
+        bb_state = ''
+        try:
+            if len(close_d) >= 22:
+                _bb = close_d.iloc[-22:]
+                bb_mid = round(float(_bb.mean()), 2)
+                _std = float(_bb.std(ddof=0))
+                bb_up = round(bb_mid + 2 * _std, 2)
+                bb_low = round(bb_mid - 2 * _std, 2)
+                if bb_up > bb_low:
+                    bb_pct = round((price - bb_low) / (bb_up - bb_low) * 100, 0)  # %B：0=下軌 100=上軌
+                if bb_mid and bb_mid > 0:
+                    bb_bw = round((bb_up - bb_low) / bb_mid * 100, 1)             # 帶寬%
+                # 位置判讀
+                if price >= bb_up:        bb_state = '觸上軌'
+                elif price <= bb_low:     bb_state = '觸下軌'
+                elif bb_pct is not None and bb_pct >= 80: bb_state = '近上軌'
+                elif bb_pct is not None and bb_pct <= 20: bb_state = '近下軌'
+                else:                     bb_state = '中軌區'
+                # 布林收口偵測：近60日帶寬分位，越低越收斂（變盤前兆）
+                if len(close_d) >= 50 and bb_bw is not None:
+                    _rmid = close_d.rolling(22).mean()
+                    _rstd = close_d.rolling(22).std(ddof=0)
+                    _rbw = ((_rmid + 2 * _rstd) - (_rmid - 2 * _rstd)) / _rmid * 100
+                    _recent = _rbw.iloc[-60:].dropna()
+                    if len(_recent) >= 20:
+                        _rank = float((_recent < bb_bw).sum()) / len(_recent) * 100
+                        if _rank <= 15:
+                            bb_state += '・收口'   # 帶寬在近期低檔，變盤前兆
+                        elif _rank >= 85:
+                            bb_state += '・開口'   # 帶寬在近期高檔，波動擴張
+        except Exception:
+            bb_up = bb_mid = bb_low = bb_pct = bb_bw = None
+            bb_state = ''
         # ── v4.2：訊號用還原權息價（與 close_d 清理後的日期對齊；補的日子用原始價）──
         try:
             close_adj = close_adj.reindex(close_d.index)
@@ -358,6 +394,8 @@ def get_signals(stock_id):
             'yesterday':  {'signal': y_signal, 'action': y_action},
             'new_high_10': new_high_10,
             'new_low_10':  new_low_10,
+            'bb_up': bb_up, 'bb_mid': bb_mid, 'bb_low': bb_low,
+            'bb_pct': bb_pct, 'bb_bw': bb_bw, 'bb_state': bb_state,
             'vol_ratio':   vol_ratio,
             'weekly':     {'signal': w_signal, 'action': w_action, 'days': w_days},
         }
@@ -728,7 +766,7 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v7.2</span></div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v7.4</span></div>
     <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" onclick="toggleSigHelp()">❔ 說明</button>
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
@@ -1172,6 +1210,17 @@ function filterSpecial(type){
         // 空頭排列：價<MA5<MA20<MA60，反向發散＝主跌段，該閃或該空
         if (s.ma5&&s.ma20&&s.ma60d && s.price<s.ma5 && s.ma5<s.ma20 && s.ma20<s.ma60d)
           { matched.push(s); seen.add(s.id); }
+      } else if (type==='bb_squeeze') {
+        // 布林收口：帶寬縮到近期低檔，變盤前兆（最值得留意）
+        if (s.bb_state && s.bb_state.indexOf('收口')>=0) { matched.push(s); seen.add(s.id); }
+      } else if (type==='bb_upper') {
+        // 貼布林上軌：強勢／過熱
+        if (s.bb_state && (s.bb_state.indexOf('觸上軌')>=0 || s.bb_state.indexOf('近上軌')>=0))
+          { matched.push(s); seen.add(s.id); }
+      } else if (type==='bb_lower') {
+        // 貼布林下軌：弱勢／超跌
+        if (s.bb_state && (s.bb_state.indexOf('觸下軌')>=0 || s.bb_state.indexOf('近下軌')>=0))
+          { matched.push(s); seen.add(s.id); }
       }
     });
   });
@@ -1299,6 +1348,22 @@ function rc(s,gi,si,readonly=false){
       ${ma(s.ma60d,'MA60',s.price,s.near_ma60d,s.ma60d_dir)}
       ${ma(s.ma60k240,'60MA240',s.price,s.near_ma60,s.ma60_dir)}
     </div>
+    ${s.bb_mid!=null?(()=>{
+      const st=s.bb_state||'';
+      const sqz=st.indexOf('收口')>=0, opn=st.indexOf('開口')>=0;
+      const pos=st.split('・')[0];
+      const posCol = pos.indexOf('上')>=0?'#ff453a': pos.indexOf('下')>=0?'#34c759':'#9fb6cc';
+      const tag = sqz?'<span style="color:#ff9f0a;font-weight:800">收口·變盤在即</span>'
+                : opn?'<span style="color:#38bdf8">開口·波動擴張</span>':'';
+      return '<div class="card-meta ma-meta" style="font-size:12.5px;padding-top:5px">'
+        +'<span style="color:#7aa8d0">布林22</span>'
+        +'<span>上 <b style="color:#c9d6e5">'+s.bb_up+'</b></span>'
+        +'<span>中 <b style="color:#c9d6e5">'+s.bb_mid+'</b></span>'
+        +'<span>下 <b style="color:#c9d6e5">'+s.bb_low+'</b></span>'
+        +'<span style="color:'+posCol+';font-weight:700">'+pos+'</span>'
+        +(s.bb_pct!=null?'<span style="color:#7aa8d0">%B '+s.bb_pct+'</span>':'')
+        +tag+'</div>';
+    })():''}
     ${(()=>{
       const sc=calcScore(s);
       if(!sc) return '';
@@ -1418,6 +1483,8 @@ async function scan(gi){
         s.near_ma20=r.near_ma20; s.near_ma60d=r.near_ma60d; s.near_ma60=r.near_ma60;
         s.daily=r.daily; s.weekly=r.weekly; s.yesterday=r.yesterday; s.new_high_10=r.new_high_10;
         s.new_low_10=r.new_low_10; s.vol_ratio=r.vol_ratio; s.data_date=r.data_date;
+        s.bb_up=r.bb_up; s.bb_mid=r.bb_mid; s.bb_low=r.bb_low;
+        s.bb_pct=r.bb_pct; s.bb_bw=r.bb_bw; s.bb_state=r.bb_state;
         s.name=r.name||'';
         hs.push({id:s.id,price:r.price,daily:r.daily,weekly:r.weekly});
       }
@@ -3890,6 +3957,8 @@ const DASH_SECTIONS = [
       ['near5','5日線支撐'], ['near10','10日線支撐'], ['near20','月線支撐'], ['near60','季線支撐'] ]},
   { title:'🔴 均線壓力（下彎·反壓）', color:'#ff453a', items:[
       ['press','均線反壓'] ]},
+  { title:'📏 布林通道（22日）', color:'#ff9f0a', items:[
+      ['bb_squeeze','布林收口 · 變盤前兆'], ['bb_upper','貼上軌 · 強勢／過熱'], ['bb_lower','貼下軌 · 弱勢／超跌'] ]},
   { title:'📆 週線', color:'#7aa8d0', items:[
       ['whold_dbuy','週持有＋日買進'], ['wbuy','週線買進'], ['wsell','週線賣出'] ]},
 ];

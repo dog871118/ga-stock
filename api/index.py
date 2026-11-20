@@ -776,7 +776,7 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v7.6</span></div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v7.7</span></div>
     <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" onclick="toggleSigHelp()">❔ 說明</button>
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
@@ -4009,26 +4009,30 @@ function longPickScore(s){
   if(bear) return null;            // 空頭排列不做多
   if(s.new_low_10) return null;    // 創新低不做多
   if(d==='賣出') return null;      // 日賣出不做多
+  // v7.7：今日大跌摜破 → 這是「跌破支撐」不是「回踩支撐」，不是買點，排除（修正會推跌停股的瑕疵）
+  const chg = s.prev_price ? (s.price-s.prev_price)/s.prev_price*100 : 0;
+  if(chg <= -3) return null;
+  // 「撐住」判斷：股價要站在均線上方或僅微幅下方，才算回踩不破；跌破均線下方＝摜破，不給分
+  const holds=(m)=> m && s.price>=m*0.985;
   let sc=0; const why=[];
   // 結構（強勢加分）
   if(bull){ sc+=30; why.push('多頭排列'); }
   else if(s.ma20 && s.price>s.ma20){ sc+=10; }
   if(s.ma60d_dir==='up'){ sc+=12; why.push('季線上揚'); }
   if(s.ma20_dir==='up'){ sc+=6; }
-  // 最佳進場點（回踩上揚均線，權重最高）
-  if(s.near_ma60d && s.ma60d_dir==='up'){ sc+=25; why.push('回踩季線支撐'); }
-  else if(s.near_ma20 && s.ma20_dir==='up'){ sc+=22; why.push('回踩月線支撐'); }
-  else if(s.near_ma10 && s.ma10_dir==='up'){ sc+=18; why.push('回踩10日線支撐'); }
-  else if(s.near_ma5 && s.ma5_dir==='up'){ sc+=15; why.push('回踩5日線支撐'); }
+  // 最佳進場點（回踩上揚均線「且撐住」，權重最高）
+  if(s.near_ma60d && s.ma60d_dir==='up' && holds(s.ma60d)){ sc+=25; why.push('回踩季線撐住'); }
+  else if(s.near_ma20 && s.ma20_dir==='up' && holds(s.ma20)){ sc+=22; why.push('回踩月線撐住'); }
+  else if(s.near_ma10 && s.ma10_dir==='up' && holds(s.ma10)){ sc+=18; why.push('回踩10日線撐住'); }
+  else if(s.near_ma5 && s.ma5_dir==='up' && holds(s.ma5)){ sc+=15; why.push('回踩5日線撐住'); }
   // 訊號
   if(d==='買進'){ sc += (s.daily.days||0)<=3 ? 18 : 12; why.push('日買進'); }
-  else if(d==='持有'){ sc+=8; }
+  else if(d==='持有'){ sc+=8; why.push('日持有'); }
   // 布林
   const bb=s.bb_state||'';
   if(bb.indexOf('收口')>=0 && s.ma60d_dir==='up'){ sc+=10; why.push('布林收口偏多'); }
   if(bb.indexOf('上軌')>=0){ sc-=12; why.push('貼上軌過熱'); }
   // 當日帶量發動（加分，不主導）
-  const chg = s.prev_price ? (s.price-s.prev_price)/s.prev_price*100 : 0;
   if(s.vol_ratio && s.vol_ratio>=1.5 && chg>=5){ sc+=8; why.push('帶量發動'); }
   return {score:sc, why:why};
 }

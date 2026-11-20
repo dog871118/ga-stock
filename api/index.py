@@ -734,6 +734,16 @@ html, body {
 .dash-wrap{padding:8px 10px 84px;max-width:540px;margin:0 auto;}
 .dash-sec{margin-bottom:20px;}
 .dash-sec-h{font-size:14px;font-weight:800;padding:6px 2px 8px;border-bottom:2px solid;margin-bottom:6px;}
+.pick-sub{font-size:13px;font-weight:800;margin:4px 2px 6px;}
+.pick-row{padding:9px 11px;margin-bottom:5px;background:rgba(255,214,10,.06);border-radius:8px;border-left:3px solid #ffd60a;cursor:pointer;}
+.pick-row:active{background:rgba(255,214,10,.14);}
+.pick-top{display:grid;grid-template-columns:52px 1fr 60px 52px 50px 50px;gap:5px;align-items:center;font-size:13px;}
+.pk-nm{color:#ffd60a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pk-pr{font-weight:700;text-align:right;}
+.pk-ch{text-align:right;font-size:11px;}
+.pk-sg{text-align:center;font-weight:700;font-size:11px;}
+.pick-why{font-size:12px;color:#cdd9e5;margin-top:5px;line-height:1.5;}
+.pick-none{font-size:12.5px;color:#7aa8d0;padding:7px 4px 10px;}
 .dash-cat{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 2px 2px;padding:9px 11px;background:rgba(56,189,248,.06);border-radius:7px;cursor:pointer;user-select:none;}
 .dash-cat:active{background:rgba(56,189,248,.16);}
 .dash-cat.open{background:rgba(56,189,248,.11);}
@@ -766,7 +776,7 @@ html, body {
 
 <div class="hdr">
   <div class="hdr-top">
-    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v7.5</span></div>
+    <div class="logo">東東.STOCK <span style="font-size:10px;color:#7aa8d0;font-weight:400">v7.6</span></div>
     <div class="hdr-btns" id="trackBtns">
       <button class="hbtn" onclick="toggleSigHelp()">❔ 說明</button>
       <button class="hbtn" id="btnLoad" onclick="loadCloud()">⬇ 載雲端</button>
@@ -1353,8 +1363,16 @@ function rc(s,gi,si,readonly=false){
       const sqz=st.indexOf('收口')>=0, opn=st.indexOf('開口')>=0;
       const pos=st.split('・')[0];
       const posCol = pos.indexOf('上')>=0?'#ff453a': pos.indexOf('下')>=0?'#34c759':'#9fb6cc';
-      const tag = sqz?'<span style="color:#ff9f0a;font-weight:800">收口·變盤在即</span>'
-                : opn?'<span style="color:#38bdf8">開口·波動擴張</span>':'';
+      let tag='';
+      if(sqz){
+        // 收口方向傾向：季線方向＋股價在中軌上下（↑偏多紅 ↓偏空綠 →未定橘）
+        let lt='方向未定→', lc='#ff9f0a';
+        if(s.ma60d_dir==='up' && s.price>=s.bb_mid){ lt='偏多變盤↑'; lc='#ff6b6b'; }
+        else if(s.ma60d_dir==='down' && s.price<=s.bb_mid){ lt='偏空變盤↓'; lc='#5bd17a'; }
+        tag='<span style="color:'+lc+';font-weight:800">收口·'+lt+'</span>';
+      } else if(opn){
+        tag='<span style="color:#38bdf8">開口·波動擴張</span>';
+      }
       return '<div class="card-meta ma-meta" style="font-size:12.5px;padding-top:5px">'
         +'<span style="color:#7aa8d0">布林22</span>'
         +'<span>上 <b style="color:#c9d6e5">'+s.bb_up+'</b></span>'
@@ -3980,6 +3998,98 @@ function dashMini(s){
   </div>`;
 }
 
+// ===== 今日精選：從全部自選股挑出最佳進場標的（多方／空方）=====
+// 設計原則（建東鐵律）：以「最佳進場點」為主、強勢為加分；追高/過熱扣分；
+// 牛皮股（無排列、無發動）自然進不了榜；寧缺勿濫。
+function longPickScore(s){
+  if(!s || !s.daily) return null;
+  const d=s.daily.action;
+  const bull = s.ma5&&s.ma20&&s.ma60d && s.price>s.ma5 && s.ma5>s.ma20 && s.ma20>s.ma60d;
+  const bear = s.ma5&&s.ma20&&s.ma60d && s.price<s.ma5 && s.ma5<s.ma20 && s.ma20<s.ma60d;
+  if(bear) return null;            // 空頭排列不做多
+  if(s.new_low_10) return null;    // 創新低不做多
+  if(d==='賣出') return null;      // 日賣出不做多
+  let sc=0; const why=[];
+  // 結構（強勢加分）
+  if(bull){ sc+=30; why.push('多頭排列'); }
+  else if(s.ma20 && s.price>s.ma20){ sc+=10; }
+  if(s.ma60d_dir==='up'){ sc+=12; why.push('季線上揚'); }
+  if(s.ma20_dir==='up'){ sc+=6; }
+  // 最佳進場點（回踩上揚均線，權重最高）
+  if(s.near_ma60d && s.ma60d_dir==='up'){ sc+=25; why.push('回踩季線支撐'); }
+  else if(s.near_ma20 && s.ma20_dir==='up'){ sc+=22; why.push('回踩月線支撐'); }
+  else if(s.near_ma10 && s.ma10_dir==='up'){ sc+=18; why.push('回踩10日線支撐'); }
+  else if(s.near_ma5 && s.ma5_dir==='up'){ sc+=15; why.push('回踩5日線支撐'); }
+  // 訊號
+  if(d==='買進'){ sc += (s.daily.days||0)<=3 ? 18 : 12; why.push('日買進'); }
+  else if(d==='持有'){ sc+=8; }
+  // 布林
+  const bb=s.bb_state||'';
+  if(bb.indexOf('收口')>=0 && s.ma60d_dir==='up'){ sc+=10; why.push('布林收口偏多'); }
+  if(bb.indexOf('上軌')>=0){ sc-=12; why.push('貼上軌過熱'); }
+  // 當日帶量發動（加分，不主導）
+  const chg = s.prev_price ? (s.price-s.prev_price)/s.prev_price*100 : 0;
+  if(s.vol_ratio && s.vol_ratio>=1.5 && chg>=5){ sc+=8; why.push('帶量發動'); }
+  return {score:sc, why:why};
+}
+function shortPickScore(s){
+  if(!s || !s.daily) return null;
+  const d=s.daily.action;
+  const bullReal = s.ma5&&s.ma20&&s.ma60d && s.price>s.ma5 && s.ma5>s.ma20 && s.ma20>s.ma60d;
+  const bear = s.ma5&&s.ma20&&s.ma60d && s.price<s.ma5 && s.ma5<s.ma20 && s.ma20<s.ma60d;
+  if(bullReal) return null;        // 多頭排列不做空
+  if(s.new_high_10) return null;   // 創新高不做空
+  if(d==='買進') return null;      // 日買進不做空
+  let sc=0; const why=[];
+  if(bear){ sc+=30; why.push('空頭排列'); }
+  if(s.ma60d_dir==='down'){ sc+=15; why.push('季線下彎'); }
+  if(s.ma20_dir==='down'){ sc+=8; }
+  // 最佳空點：反彈到上方下彎均線反壓
+  const nr=(p,m)=>p&&m&&Math.abs(p-m)/m<=0.03;
+  const above=[['5日線',s.ma5,s.ma5_dir],['10日線',s.ma10,s.ma10_dir],['月線',s.ma20,s.ma20_dir],['季線',s.ma60d,s.ma60d_dir]]
+    .find(x=>x[2]==='down' && x[1]>s.price && nr(s.price,x[1]));
+  if(above){ sc+=20; why.push('反彈觸'+above[0]+'反壓'); }
+  if(d==='賣出'){ sc+=15; why.push('日賣出'); }
+  const bb=s.bb_state||'';
+  if(bb.indexOf('上軌')>=0 && s.ma60d_dir==='down'){ sc+=12; why.push('反彈貼上軌'); }
+  if(bb.indexOf('收口')>=0 && s.ma60d_dir==='down'){ sc+=8; why.push('布林收口偏空'); }
+  if(bb.indexOf('下軌')>=0){ sc-=10; }   // 已超跌，避免追空殺低
+  if(s.new_low_10){ sc-=5; }             // 已跌深
+  return {score:sc, why:why};
+}
+function topPicks(){
+  const seen=new Set(), all=[];
+  groups.forEach(g=>(g.stocks||[]).forEach(s=>{
+    if(s && s.id && s.daily && !seen.has(s.id)){ seen.add(s.id); all.push(s); }
+  }));
+  const longs=[], shorts=[];
+  all.forEach(s=>{
+    const L=longPickScore(s);  if(L && L.score>=35) longs.push({s:s,score:L.score,why:L.why});
+    const S=shortPickScore(s); if(S && S.score>=35) shorts.push({s:s,score:S.score,why:S.why});
+  });
+  longs.sort((a,b)=>b.score-a.score);
+  shorts.sort((a,b)=>b.score-a.score);
+  return {longs:longs.slice(0,5), shorts:shorts.slice(0,5)};
+}
+function pickRow(p){
+  const s=p.s, d=s.daily||{}, w=s.weekly||{};
+  const col=a=> a==='買進'?'#ff453a':a==='賣出'?'#34c759':a==='持有'?'#ffd60a':'#9fb2c6';
+  const chg=s.prev_price?((s.price-s.prev_price)/s.prev_price*100):null;
+  const chgCol=chg==null?'#9fb2c6':(chg>=0?'#ff453a':'#34c759');
+  const chgTxt=chg!=null?((chg>=0?'+':'')+chg.toFixed(1)+'%'):'';
+  return `<div class="pick-row" onclick="gotoStock('${s.id}')">
+    <div class="pick-top">
+    <span class="dm-id">${s.id}</span>
+    <span class="pk-nm">${s.name||''}</span>
+    <span class="pk-pr" style="color:${chgCol}">${s.price!=null?s.price:'—'}</span>
+    <span class="pk-ch" style="color:${chgCol}">${chgTxt}</span>
+    <span class="pk-sg" style="color:${col(d.action)}">日${d.action||'—'}</span>
+    <span class="pk-sg" style="color:${col(w.action)};opacity:.85">週${w.action||'—'}</span>
+    </div>
+    <div class="pick-why">${p.why.slice(0,4).join('・')}</div>
+  </div>`;
+}
+
 function renderDashboard(){
   syncLatest();
   const anyData = groups.some(g=>(g.stocks||[]).some(s=>s.daily));
@@ -3987,6 +4097,14 @@ function renderDashboard(){
   if(!anyData){
     h+='<div class="empty">尚無掃描資料——請先到「自選」讓它掃描一次，再回來看總覽</div>';
   } else {
+    // ⭐ 今日精選（置頂）：多方／空方各挑最佳進場 3～5 檔
+    const picks=topPicks();
+    h+='<div class="dash-sec"><div class="dash-sec-h" style="color:#ffd60a;border-color:#ffd60a">⭐ 今日精選（最佳進場）</div>';
+    h+='<div class="pick-sub" style="color:#ff6b6b">多方推薦'+(picks.longs.length?'（'+picks.longs.length+'）':'')+'</div>';
+    h+= picks.longs.length ? picks.longs.map(pickRow).join('') : '<div class="pick-none">今日無明確多方標的（寧缺勿濫）</div>';
+    h+='<div class="pick-sub" style="color:#5bd17a;margin-top:10px">空方推薦'+(picks.shorts.length?'（'+picks.shorts.length+'）':'')+'</div>';
+    h+= picks.shorts.length ? picks.shorts.map(pickRow).join('') : '<div class="pick-none">今日無明確空方標的</div>';
+    h+='</div>';
     let total=0;
     DASH_SECTIONS.forEach(sec=>{
       let block='';
